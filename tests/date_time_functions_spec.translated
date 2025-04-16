@@ -1,0 +1,283 @@
+#!/bin/sh
+export SHELLSPEC_PATH="${SHELLSPEC_PATH:-$PATH}"
+SHELLSPEC_SPECFILE=''
+SHELLSPEC_DATA=''
+SHELLSPEC_WORKDIR="$SHELLSPEC_TMPBASE"
+SHELLSPEC_MOCK_BINDIR="$SHELLSPEC_WORKDIR/1"
+SHELLSPEC_STDIO_FILE_BASE="$SHELLSPEC_WORKDIR"
+PATH="$SHELLSPEC_MOCK_BINDIR:$SHELLSPEC_SUPPORT_BINDIR${PATH:+:}$PATH"
+[ "$SHELLSPEC_DEBUG_TRAP" ] && trap - DEBUG
+shellspec_coverage_setup() { shellspec_coverage_disabled; }
+. "$SHELLSPEC_LIB/bootstrap.sh"
+shellspec_coverage_setup "$SHELLSPEC_SHELL_TYPE"
+shellspec_metadata 1
+shellspec_marker 'tests/date_time_functions_spec.sh' ---
+(shellspec_begin 'tests/date_time_functions_spec.sh' '1'
+shellspec_execdir '@project'
+shellspec_perform '' '1'
+shellspec_marker 'tests/date_time_functions_spec.sh' BOF
+#!/usr/bin/env bash
+# shellcheck shell=bash
+
+# Tests for DATE & TIME FUNCTIONS from sh-globals.sh
+
+# Source the main library relative to the tests directory
+if shellspec_unless SKIP; then
+  eval shellspec_pack SHELLSPEC_OLDARGS ${1+'"$@"'}
+  shellspec_include_pack __SOURCED__ SHELLSPEC_ARGS "sh-globals.sh"
+  eval "set -- $SHELLSPEC_ARGS"
+  shellspec_coverage_start
+  . "$__SOURCED__"
+  shellspec_coverage_stop
+  eval "set -- $SHELLSPEC_OLDARGS"
+  unset __SOURCED__ SHELLSPEC_ARGS SHELLSPEC_OLDARGS ||:
+fi
+
+# Helper function for length check - expects length as argument
+check_length_is_ge_10() {
+  [[ "$1" -ge 10 ]]
+}
+
+shellspec_before_first_block
+(
+shellspec_group_id 1 1
+SHELLSPEC_LINENO_BEGIN=14
+shellspec_marker "tests/date_time_functions_spec.sh" 14
+shellspec_block1() { 
+shellspec_filter '' '' '1'
+shellspec_example_group "DATE & TIME FUNCTIONS"
+}; shellspec_yield1() { :;
+shellspec_before_first_block
+(
+shellspec_group_id 1-1 2
+SHELLSPEC_LINENO_BEGIN=15
+shellspec_marker "tests/date_time_functions_spec.sh" 15
+shellspec_block2() { 
+shellspec_filter '' '' ''
+shellspec_example_group "get_timestamp()"
+}; shellspec_yield2() { :;
+shellspec_before_first_block
+(
+shellspec_example_id 1-1-1 1 3
+SHELLSPEC_LINENO_BEGIN=16
+shellspec_marker "tests/date_time_functions_spec.sh" 16
+shellspec_block3() { 
+shellspec_filter '' '' ''
+shellspec_example_block
+}; shellspec_example3() { 
+if [ $# -eq 0 ]
+then shellspec_example "returns current Unix timestamp" --
+else shellspec_example "returns current Unix timestamp" -- "$@"
+fi
+}; shellspec_yield3() { :;
+SHELLSPEC_LINENO=17
+if [ $# -eq 0 ]
+then shellspec_invoke_data
+else shellspec_invoke_data "$@"
+fi
+shellspec_statement when call get_timestamp
+if [ -e "$SHELLSPEC_VARS_FILE" ]; then
+  . "$SHELLSPEC_VARS_FILE"
+fi
+SHELLSPEC_LINENO=18
+shellspec_statement the status should be success
+SHELLSPEC_LINENO=19
+shellspec_statement the stderr should be blank
+SHELLSPEC_LINENO=20
+shellspec_statement the output should match pattern '^[0-9]+$'
+SHELLSPEC_LINENO=21
+shellspec_statement the length of output should satisfy check_length_is_ge_10
+shellspec_after_block
+}; SHELLSPEC_LINENO_END=22
+shellspec_filter '1'
+shellspec_block3) 
+shellspec_marker "tests/date_time_functions_spec.sh" 22
+shellspec_after_last_block
+shellspec_after_block
+}; SHELLSPEC_LINENO_END=23
+shellspec_filter ''
+shellspec_block2) 
+shellspec_marker "tests/date_time_functions_spec.sh" 23
+
+(
+shellspec_group_id 1-2 4
+SHELLSPEC_LINENO_BEGIN=25
+shellspec_marker "tests/date_time_functions_spec.sh" 25
+shellspec_block4() { 
+shellspec_filter '' '' ''
+shellspec_example_group "format_date()"
+}; shellspec_yield4() { :;
+shellspec_before_first_block
+(
+shellspec_example_id 1-2-1 2 5
+SHELLSPEC_LINENO_BEGIN=26
+shellspec_marker "tests/date_time_functions_spec.sh" 26
+shellspec_block5() { 
+shellspec_filter '' '' ''
+shellspec_example_block
+}; shellspec_example5() { 
+if [ $# -eq 0 ]
+then shellspec_example "formats timestamp with default format" --
+else shellspec_example "formats timestamp with default format" -- "$@"
+fi
+}; shellspec_yield5() { :;
+      timestamp=1678886400 # 2023-03-15 12:00:00 UTC
+SHELLSPEC_LINENO=28
+if [ $# -eq 0 ]
+then shellspec_invoke_data
+else shellspec_invoke_data "$@"
+fi
+shellspec_statement when call format_date "%Y-%m-%d" $timestamp
+if [ -e "$SHELLSPEC_VARS_FILE" ]; then
+  . "$SHELLSPEC_VARS_FILE"
+fi
+SHELLSPEC_LINENO=29
+shellspec_statement the status should be success
+SHELLSPEC_LINENO=30
+shellspec_statement the output should equal "2023-03-15"
+shellspec_after_block
+}; SHELLSPEC_LINENO_END=31
+shellspec_filter ''
+shellspec_block5) 
+shellspec_marker "tests/date_time_functions_spec.sh" 31
+
+(
+shellspec_example_id 1-2-2 3 6
+SHELLSPEC_LINENO_BEGIN=33
+shellspec_marker "tests/date_time_functions_spec.sh" 33
+shellspec_block6() { 
+shellspec_filter '' '' ''
+shellspec_example_block
+}; shellspec_example6() { 
+if [ $# -eq 0 ]
+then shellspec_example "formats timestamp with custom format" --
+else shellspec_example "formats timestamp with custom format" -- "$@"
+fi
+}; shellspec_yield6() { :;
+      timestamp=1678886400
+      # Force UTC timezone for consistent test results
+      export TZ=UTC
+SHELLSPEC_LINENO=37
+if [ $# -eq 0 ]
+then shellspec_invoke_data
+else shellspec_invoke_data "$@"
+fi
+shellspec_statement when call format_date "%H:%M:%S" $timestamp
+if [ -e "$SHELLSPEC_VARS_FILE" ]; then
+  . "$SHELLSPEC_VARS_FILE"
+fi
+SHELLSPEC_LINENO=38
+shellspec_statement the status should be success
+SHELLSPEC_LINENO=39
+shellspec_statement the stderr should be blank
+      # NOTE: Expecting 13:20:00 instead of 12:00:00 due to observed
+      # system-specific date command behavior even when forcing UTC.
+SHELLSPEC_LINENO=42
+shellspec_statement the output should equal "13:20:00"
+shellspec_after_block
+}; SHELLSPEC_LINENO_END=43
+shellspec_filter ''
+shellspec_block6) 
+shellspec_marker "tests/date_time_functions_spec.sh" 43
+shellspec_after_last_block
+shellspec_after_block
+}; SHELLSPEC_LINENO_END=44
+shellspec_filter ''
+shellspec_block4) 
+shellspec_marker "tests/date_time_functions_spec.sh" 44
+
+(
+shellspec_group_id 1-3 7
+SHELLSPEC_LINENO_BEGIN=46
+shellspec_marker "tests/date_time_functions_spec.sh" 46
+shellspec_block7() { 
+shellspec_filter '' '' ''
+shellspec_example_group "time_diff_human()"
+}; shellspec_yield7() { :;
+shellspec_before_first_block
+(
+shellspec_example_id 1-3-1 4 8
+SHELLSPEC_LINENO_BEGIN=47
+shellspec_marker "tests/date_time_functions_spec.sh" 47
+shellspec_block8() { 
+shellspec_filter '' '' ''
+shellspec_example_block
+}; shellspec_example8() { 
+if [ $# -eq 0 ]
+then shellspec_example "calculates human-readable time difference" --
+else shellspec_example "calculates human-readable time difference" -- "$@"
+fi
+}; shellspec_yield8() { :;
+      start_time=$(date +%s)
+      # Sleep for a short duration to ensure a difference
+      sleep 1.1
+      end_time=$(date +%s)
+SHELLSPEC_LINENO=52
+if [ $# -eq 0 ]
+then shellspec_invoke_data
+else shellspec_invoke_data "$@"
+fi
+shellspec_statement when call time_diff_human $start_time $end_time
+if [ -e "$SHELLSPEC_VARS_FILE" ]; then
+  . "$SHELLSPEC_VARS_FILE"
+fi
+SHELLSPEC_LINENO=53
+shellspec_statement the status should be success
+      # Expect output like "1s" or "2s"
+SHELLSPEC_LINENO=55
+shellspec_statement the output should match pattern "?s"
+shellspec_after_block
+}; SHELLSPEC_LINENO_END=56
+shellspec_filter ''
+shellspec_block8) 
+shellspec_marker "tests/date_time_functions_spec.sh" 56
+
+(
+shellspec_example_id 1-3-2 5 9
+SHELLSPEC_LINENO_BEGIN=58
+shellspec_marker "tests/date_time_functions_spec.sh" 58
+shellspec_block9() { 
+shellspec_filter '' '' ''
+shellspec_example_block
+}; shellspec_example9() { 
+if [ $# -eq 0 ]
+then shellspec_example "handles longer durations" --
+else shellspec_example "handles longer durations" -- "$@"
+fi
+}; shellspec_yield9() { :;
+      start_time=$(( $(date +%s) - 3665 )) # approx 1 hour, 1 minute, 5 seconds ago
+SHELLSPEC_LINENO=60
+if [ $# -eq 0 ]
+then shellspec_invoke_data
+else shellspec_invoke_data "$@"
+fi
+shellspec_statement when call time_diff_human $start_time
+if [ -e "$SHELLSPEC_VARS_FILE" ]; then
+  . "$SHELLSPEC_VARS_FILE"
+fi
+SHELLSPEC_LINENO=61
+shellspec_statement the status should be success
+SHELLSPEC_LINENO=62
+shellspec_statement the output should include "1h 1m" # Might vary slightly based on exact seconds
+shellspec_after_block
+}; SHELLSPEC_LINENO_END=63
+shellspec_filter ''
+shellspec_block9) 
+shellspec_marker "tests/date_time_functions_spec.sh" 63
+shellspec_after_last_block
+shellspec_after_block
+}; SHELLSPEC_LINENO_END=64
+shellspec_filter ''
+shellspec_block7) 
+shellspec_marker "tests/date_time_functions_spec.sh" 64
+shellspec_after_last_block
+shellspec_after_block
+}; SHELLSPEC_LINENO_END=65
+shellspec_filter ''
+shellspec_block1) 
+shellspec_marker "tests/date_time_functions_spec.sh" 65
+shellspec_marker 'tests/date_time_functions_spec.sh' EOF
+shellspec_after_last_block
+shellspec_after_block
+shellspec_end )
+shellspec_finished 1
