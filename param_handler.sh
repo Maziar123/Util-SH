@@ -13,6 +13,17 @@ RED="\e[31m"
 MAGENTA="\e[35m"
 NC="\e[0m"  # No Color (reset)
 
+# Disable colors if running under ShellSpec or NO_COLOR is set
+if [[ -n "${SHELLSPEC_RUNNING:-}" || -n "${NO_COLOR:-}" ]]; then
+    BLUE=""
+    GREEN=""
+    YELLOW=""
+    CYAN=""
+    RED=""
+    MAGENTA=""
+    NC=""
+fi
+
 # Check if getoptions command exists
 if type -t getoptions &>/dev/null; then
     # Check if getoptions.sh exists in the same directory

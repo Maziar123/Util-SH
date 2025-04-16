@@ -6,6 +6,10 @@
 # so it is better to set them here.
 # set -eu
 
+# Test naming convention:
+# - Tests for sh-globals.sh use the naming pattern: "sh-global_*.sh"
+# - Legacy tests use the naming pattern: "*_spec.sh"
+
 # This callback function will be invoked only once before loading specfiles.
 spec_helper_precheck() {
   # Available functions: info, warn, error, abort, setenv, unsetenv

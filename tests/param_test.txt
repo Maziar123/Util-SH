@@ -1,0 +1,267 @@
+# === Test Suite: param_handler.sh ===
+
+# --- Context: Describe "with named parameters only" ---
+# Setup: param_handler::init; param_handler::register_param "name" "TEST_NAME" "name" ...; param_handler::register_param "age" ...; param_handler::register_param "city" ...; param_handler::parse_args --name "John Doe" --age "30" --city "New York"
+
+# Test: It "sets the name parameter correctly"
+# Expect: The variable TEST_NAME should equal "John Doe"
+[ "$TEST_NAME" = "John Doe" ]
+
+# Test: It "sets the age parameter correctly"
+# Expect: The variable TEST_AGE should equal "30"
+[ "$TEST_AGE" = "30" ]
+
+# Test: It "sets the city parameter correctly"
+# Expect: The variable TEST_CITY should equal "New York"
+[ "$TEST_CITY" = "New York" ]
+
+# Test: It "counts named parameters correctly"
+# Action: When call param_handler::get_named_count
+# Expect: The stdout should equal "3"
+output=$(param_handler::get_named_count)
+[ "$output" = "3" ]
+
+# Test: It "counts positional parameters correctly"
+# Action: When call param_handler::get_positional_count
+# Expect: The stdout should equal "0"
+output=$(param_handler::get_positional_count)
+[ "$output" = "0" ]
+
+# --- Context: Describe "with positional parameters only" ---
+# Setup: param_handler::init; param_handler::register_param ...; param_handler::parse_args "Jane Smith" "25" "Boston"
+
+# Test: It "sets the name parameter correctly"
+# Expect: The variable TEST_NAME should equal "Jane Smith"
+[ "$TEST_NAME" = "Jane Smith" ]
+
+# Test: It "sets the age parameter correctly"
+# Expect: The variable TEST_AGE should equal "25"
+[ "$TEST_AGE" = "25" ]
+
+# Test: It "sets the city parameter correctly"
+# Expect: The variable TEST_CITY should equal "Boston"
+[ "$TEST_CITY" = "Boston" ]
+
+# Test: It "counts named parameters correctly"
+# Action: When call param_handler::get_named_count
+# Expect: The stdout should equal "0"
+output=$(param_handler::get_named_count)
+[ "$output" = "0" ]
+
+# Test: It "counts positional parameters correctly"
+# Action: When call param_handler::get_positional_count
+# Expect: The stdout should equal "3"
+output=$(param_handler::get_positional_count)
+[ "$output" = "3" ]
+
+# --- Context: Describe "with mixed parameters" ---
+# Setup: param_handler::init; param_handler::register_param ...; param_handler::parse_args --name "Alex Johnson" "40" "Seattle"
+
+# Test: It "sets the name parameter correctly (named)"
+# Expect: The variable TEST_NAME should equal "Alex Johnson"
+[ "$TEST_NAME" = "Alex Johnson" ]
+
+# Test: It "sets the age parameter correctly (positional)"
+# Expect: The variable TEST_AGE should equal "40"
+[ "$TEST_AGE" = "40" ]
+
+# Test: It "sets the city parameter correctly (positional)"
+# Expect: The variable TEST_CITY should equal "Seattle"
+[ "$TEST_CITY" = "Seattle" ]
+
+# Test: It "counts named parameters correctly"
+# Action: When call param_handler::get_named_count
+# Expect: The stdout should equal "1"
+output=$(param_handler::get_named_count)
+[ "$output" = "1" ]
+
+# Test: It "counts positional parameters correctly"
+# Action: When call param_handler::get_positional_count
+# Expect: The stdout should equal "2"
+output=$(param_handler::get_positional_count)
+[ "$output" = "2" ]
+
+# --- Context: Describe "simple_handle function" ---
+# Setup: param_handler::init; declare -Ag TEST_PARAMS=(["name:TEST_NAME"]...); param_handler::simple_handle TEST_PARAMS --name "Sarah Wilson" --age "35" --city "Denver"
+
+# Test: It "sets the name parameter correctly"
+# Expect: The variable TEST_NAME should equal "Sarah Wilson"
+[ "$TEST_NAME" = "Sarah Wilson" ]
+
+# Test: It "sets the age parameter correctly"
+# Expect: The variable TEST_AGE should equal "35"
+[ "$TEST_AGE" = "35" ]
+
+# Test: It "sets the city parameter correctly"
+# Expect: The variable TEST_CITY should equal "Denver"
+[ "$TEST_CITY" = "Denver" ]
+
+# --- Context: Describe "parameter tracking functions" ---
+# Setup: param_handler::init; param_handler::register_param ...; param_handler::parse_args --name "Robert Taylor" "33" --city "Dallas"
+
+# Test: It "tracks name as set by name"
+# Action: When call param_handler::was_set_by_name "name"
+# Expect: The status should be success
+param_handler::was_set_by_name "name"
+[ $? -eq 0 ]
+
+# Test: It "tracks age as not set by name"
+# Action: When call param_handler::was_set_by_name "age"
+# Expect: The status should be failure
+param_handler::was_set_by_name "age"
+[ $? -ne 0 ]
+
+# Test: It "tracks city as set by name"
+# Action: When call param_handler::was_set_by_name "city"
+# Expect: The status should be success
+param_handler::was_set_by_name "city"
+[ $? -eq 0 ]
+
+# Test: It "tracks name as not set by position"
+# Action: When call param_handler::was_set_by_position "name"
+# Expect: The status should be failure
+param_handler::was_set_by_position "name"
+[ $? -ne 0 ]
+
+# Test: It "tracks age as set by position"
+# Action: When call param_handler::was_set_by_position "age"
+# Expect: The status should be success
+param_handler::was_set_by_position "age"
+[ $? -eq 0 ]
+
+# Test: It "tracks city as not set by position"
+# Action: When call param_handler::was_set_by_position "city"
+# Expect: The status should be failure
+param_handler::was_set_by_position "city"
+[ $? -ne 0 ]
+
+# --- Context: Describe "get_param function" ---
+# Setup: param_handler::init; param_handler::register_param ...; param_handler::parse_args --name "Robert Taylor" "33" --city "Dallas"
+
+# Test: It "gets name parameter value correctly"
+# Action: When call param_handler::get_param "name"
+# Expect: The stdout should equal "Robert Taylor"
+output=$(param_handler::get_param "name")
+[ "$output" = "Robert Taylor" ]
+
+# Test: It "gets age parameter value correctly"
+# Action: When call param_handler::get_param "age"
+# Expect: The stdout should equal "33"
+output=$(param_handler::get_param "age")
+[ "$output" = "33" ]
+
+# Test: It "gets city parameter value correctly"
+# Action: When call param_handler::get_param "city"
+# Expect: The stdout should equal "Dallas"
+output=$(param_handler::get_param "city")
+[ "$output" = "Dallas" ]
+
+# --- Context: Describe "with custom option names" ---
+# Setup: param_handler::init; declare -Ag TEST_PARAMS=(["username:TEST_NAME:user"]...); param_handler::simple_handle TEST_PARAMS --user "Emma Wilson" --pass "42" --loc "Austin"
+
+# Test: It "sets the name parameter correctly"
+# Expect: The variable TEST_NAME should equal "Emma Wilson"
+[ "$TEST_NAME" = "Emma Wilson" ]
+
+# Test: It "sets the age parameter correctly" # Note: Uses TEST_AGE internally in setup
+# Expect: The variable TEST_AGE should equal "42"
+[ "$TEST_AGE" = "42" ]
+
+# Test: It "sets the city parameter correctly" # Note: Uses TEST_CITY internally in setup
+# Expect: The variable TEST_CITY should equal "Austin"
+[ "$TEST_CITY" = "Austin" ]
+
+# --- Context: Describe "parameter export functionality" / "JSON export format" ---
+# Setup: param_handler::init; param_handler::register_param "name" "TEST_NAME" ...; param_handler::register_param "age" "TEST_AGE" ...; param_handler::register_param "email" "TEST_EMAIL" ...; param_handler::parse_args --name "Alice Smith" --age "25" --email "alice@example.com"
+
+# Test: It "includes all parameters in JSON output"
+# Action: When call param_handler::export_params --format json
+# Expect: The stdout should include "name", "Alice Smith", "age", "25", "email", "alice@example.com"
+output=$(param_handler::export_params --format json)
+[[ "$output" == *"\"name\":"* && "$output" == *"\"Alice Smith\""* && "$output" == *"\"age\":"* && "$output" == *"\"25\""* && "$output" == *"\"email\":"* && "$output" == *"\"alice@example.com\""* ]]
+
+# Test: It "adds prefix to JSON keys when specified"
+# Action: When call param_handler::export_params --format json --prefix "USER_"
+# Expect: The stdout should include "USER_name", "Alice Smith", "USER_age", "25", "USER_email", "alice@example.com"
+output=$(param_handler::export_params --format json --prefix "USER_")
+[[ "$output" == *"\"USER_name\":"* && "$output" == *"\"Alice Smith\""* && "$output" == *"\"USER_age\":"* && "$output" == *"\"25\""* && "$output" == *"\"USER_email\":"* && "$output" == *"\"alice@example.com\""* ]]
+
+# --- Context: Describe "parameter export functionality" / "environment variable export" ---
+# Setup: param_handler::init; param_handler::register_param "export_name" "EXPORT_TEST_NAME" ...; param_handler::register_param "export_age" "EXPORT_TEST_AGE" ...; param_handler::register_param "export_email" "EXPORT_TEST_EMAIL" ...; param_handler::parse_args --export-name "Bob Johnson" --export-age "40" --export-email "bob@example.com"; param_handler::export_params --prefix ""
+
+# Test: It "exports variables to environment with prefix"
+# Expect: The variable EXPORT_TEST_NAME should equal "Bob Johnson"
+[ "$EXPORT_TEST_NAME" = "Bob Johnson" ]
+# Expect: The variable EXPORT_TEST_AGE should equal "40"
+[ "$EXPORT_TEST_AGE" = "40" ]
+# Expect: The variable EXPORT_TEST_EMAIL should equal "bob@example.com"
+[ "$EXPORT_TEST_EMAIL" = "bob@example.com" ]
+
+# --- Context: Describe "parameter display functionality" ---
+# Setup: param_handler::init; param_handler::register_param "name" "TEST_NAME" ...; param_handler::register_param "age" "TEST_AGE" ...; param_handler::register_param "email" "TEST_EMAIL" ...; param_handler::parse_args --name "Charlie Wilson" "45" --email "charlie@example.com"
+
+# Test: It "displays all parameters in print_params output"
+# Action: When call param_handler::print_params
+# Expect: The stdout should include "TEST_NAME:", "Charlie Wilson", "TEST_AGE:", "45", "TEST_EMAIL:", "charlie@example.com"
+output=$(param_handler::print_params)
+[[ "$output" == *"TEST_NAME:"* && "$output" == *"Charlie Wilson"* && "$output" == *"TEST_AGE:"* && "$output" == *"45"* && "$output" == *"TEST_EMAIL:"* && "$output" == *"charlie@example.com"* ]]
+
+# Test: It "includes correct counts in parameter summary"
+# Action: When run bash -c 'source "tests/param_handler_helper.sh"; source "param_handler.sh"; setup_display_params; param_handler::print_summary | sed "s/\\x1b\\[[0-9;]*[mK]//g" | sed "s/[[:space:]]*$//" | sed "/^$/d"'
+# Expect: The stdout should equal "Parameter Summary:\nNamed parameters: 2\nPositional parameters: 1\nTotal parameters: 3"
+expected_summary=$(cat <<-EOF
+Parameter Summary:
+Named parameters: 2
+Positional parameters: 1
+Total parameters: 3
+EOF
+)
+output=$(bash -c 'source "tests/param_handler_helper.sh"; source "param_handler.sh"; setup_display_params; param_handler::print_summary | sed "s/\\x1b\\[[0-9;]*[mK]//g" | sed "s/[[:space:]]*$//" | sed "/^$/d"')
+[ "$output" = "$expected_summary" ]
+
+
+# --- Context: Describe "parameter type handling" / "with manual API" ---
+# Setup: param_handler::init; param_handler::register_param "string" "TEST_STRING" ...; param_handler::register_param "number" "TEST_NUMBER" ...; param_handler::register_param "boolean" "TEST_BOOLEAN" ...; param_handler::register_param "path" "TEST_PATH" ...; param_handler::register_param "csv" "TEST_CSV" ...; param_handler::parse_args --string "Hello, World!" --number "42" --boolean "true" --path "/home/user/documents" --csv "apple,banana,cherry"
+
+# Test: It "handles text data correctly"
+# Expect: The variable TEST_STRING should equal "Hello, World!"
+[ "$TEST_STRING" = "Hello, World!" ]
+
+# Test: It "handles numeric data correctly"
+# Expect: The variable TEST_NUMBER should equal "42"
+[ "$TEST_NUMBER" = "42" ]
+
+# Test: It "handles boolean values correctly"
+# Expect: The variable TEST_BOOLEAN should equal "true"
+[ "$TEST_BOOLEAN" = "true" ]
+
+# Test: It "handles file paths correctly"
+# Expect: The variable TEST_PATH should equal "/home/user/documents"
+[ "$TEST_PATH" = "/home/user/documents" ]
+
+# Test: It "handles comma-separated values correctly"
+# Expect: The variable TEST_CSV should equal "apple,banana,cherry"
+[ "$TEST_CSV" = "apple,banana,cherry" ]
+
+# --- Context: Describe "parameter type handling" / "with simple API" ---
+# Setup: param_handler::init; declare -Ag TYPE_PARAMS=(["string:TEST_STRING"]...); param_handler::simple_handle TYPE_PARAMS --string "Hello, World!" --number "42" --boolean "true" --path "/home/user/documents" --csv "apple,banana,cherry"
+
+# Test: It "handles text data correctly with simple API"
+# Expect: The variable TEST_STRING should equal "Hello, World!"
+[ "$TEST_STRING" = "Hello, World!" ]
+
+# Test: It "handles numeric data correctly with simple API"
+# Expect: The variable TEST_NUMBER should equal "42"
+[ "$TEST_NUMBER" = "42" ]
+
+# Test: It "handles boolean values correctly with simple API"
+# Expect: The variable TEST_BOOLEAN should equal "true"
+[ "$TEST_BOOLEAN" = "true" ]
+
+# Test: It "handles file paths correctly with simple API"
+# Expect: The variable TEST_PATH should equal "/home/user/documents"
+[ "$TEST_PATH" = "/home/user/documents" ]
+
+# Test: It "handles comma-separated values correctly with simple API"
+# Expect: The variable TEST_CSV should equal "apple,banana,cherry"
+[ "$TEST_CSV" = "apple,banana,cherry" ]
