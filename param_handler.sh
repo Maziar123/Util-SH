@@ -254,6 +254,8 @@ param_handler::process_params() {
     # Source the temporary file to define parser_definition function
     # shellcheck disable=SC1090
     source "$tmp_file"
+
+    kate $tmp_file
     
     # Use getoptions to create parse function
     eval "$(getoptions param_handler::parser_definition parse)"
@@ -263,6 +265,43 @@ param_handler::process_params() {
     
     # Parse arguments
     param_handler::parse_args "$@"
+    
+    # Check if help was requested and handle it if requested
+    if $handle_help && [[ -n "$help" ]]; then
+        param_handler::print_help
+        return 1  # Signal that help was displayed
+    fi
+    
+    # Handle required parameters
+    if ! param_handler::handle_required_params; then
+        return 2  # Signal that required parameters are missing
+    fi
+    
+    return 0
+}
+
+# Process all parameters (setup parser, parse args, optionally handle help) - Alternate version using variable + eval
+# Usage: param_handler::process_params_alt [--handle-help] "$@"
+param_handler::process_params_alt() {
+    local handle_help=false
+    if [[ "$1" == "--handle-help" ]]; then
+        handle_help=true
+        shift
+    fi
+    
+    # Generate parser definition into a variable
+    local parser_definition_string
+    parser_definition_string=$(param_handler::generate_parser_definition "param_handler::parser_definition_alt")
+    
+    # Define the parser function using eval
+    eval "$parser_definition_string"
+    
+    # Use getoptions to create parse function
+    # Note: Using a different parser function name to avoid conflicts if both process functions are somehow used
+    eval "$(getoptions param_handler::parser_definition_alt parse_alt)"
+    
+    # Parse arguments using the alternate parse function
+    parse_alt "$@"
     
     # Check if help was requested and handle it if requested
     if $handle_help && [[ -n "$help" ]]; then
