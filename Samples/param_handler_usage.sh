@@ -2,9 +2,9 @@
 # Example usage of param_handler.sh with simplified API
 
 # Get the directory where this script is located
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Source sh-globals.sh directly to set SH_GLOBALS_LOADED variable
+# Source sh-globals.sh directly to set SH_GLOBALS_LOADED variablee606
 GLOBALS_SCRIPT="${SCRIPT_DIR}/../sh-globals.sh"
 
 if [[ -f "${GLOBALS_SCRIPT}" ]]; then

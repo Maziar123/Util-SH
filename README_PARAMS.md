@@ -457,7 +457,7 @@ param_handler::register_param "param_name" "VAR_NAME" "option_name" "Description
 param_handler::generate_parser_definition "my_parser"
 
 # Process parameters
-param_handler::process_params "$@"
+param_handler::process "$@"
 
 # Check parameter source
 if param_handler::was_set_by_name "param_name"; then
@@ -536,7 +536,7 @@ param_handler::register_param "pass" "PASSWORD" "password" "Password for authent
 param_handler::register_param "server" "SERVER_ADDRESS" "server-address" "Server address"
 
 # Process parameters with help handling
-if ! param_handler::process_params --handle-help "$@"; then
+if ! param_handler::process --handle-help "$@"; then
     exit 0  # Help was displayed
 fi
 
