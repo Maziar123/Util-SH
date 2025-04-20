@@ -54,8 +54,8 @@ run_test() {
     VIRT_GRAPHIC="" VIRT_VIDEO="" RENDER="" GPU_VENDOR=""
     
     # Define parameters in an ordered array to guarantee parameter order
-    # Format: "internal_name:VARIABLE_NAME:option_name:description"
-    declare -a ORDER=(
+    # Format: "internal_name:VAR_NAME:option_name:description"
+    declare -a PARAMS=(
         "graphic:VIRT_GRAPHIC:virt-graphic:Virtual graphics configuration"
         "video:VIRT_VIDEO:virt-video:Virtual video device settings"
         "render:RENDER:render:Rendering mode (software/virtual)"
@@ -63,7 +63,7 @@ run_test() {
     )
     
     # Process all parameters in one step with guaranteed order
-    param_handler::ordered_handle ORDER "${cmd_args[@]}"
+    param_handler::simple_handle PARAMS "${cmd_args[@]}"
     
     # Print the parameter values and how they were set
     msg_section "Parameter Values" 40
@@ -79,7 +79,7 @@ run_test() {
 # If arguments are provided, run the script with those arguments
 if [[ $# -gt 0 ]]; then
     # Define parameters in an ordered array to guarantee parameter order
-    declare -a ORDER=(
+    declare -a PARAMS=(
         "graphic:VIRT_GRAPHIC:virt-graphic:Virtual graphics configuration"
         "video:VIRT_VIDEO:virt-video:Virtual video device settings"
         "render:RENDER:render:Rendering mode (software/virtual)"
@@ -87,7 +87,7 @@ if [[ $# -gt 0 ]]; then
     )
     
     # Process all parameters in one step with guaranteed order
-    if ! param_handler::ordered_handle ORDER "$@"; then
+    if ! param_handler::simple_handle PARAMS "$@"; then
         exit 0  # Help was shown, exit successfully
     fi
     
@@ -140,7 +140,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 # Run multiple test cases
-msg_header "Running multiple test cases for param_handler.sh (ordered version)"
+msg_header "Running multiple test cases for param_handler.sh (ordered array version)"
 
 # Tests with no parameters
 run_test 1 "No parameters" 

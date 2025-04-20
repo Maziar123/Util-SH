@@ -35,9 +35,9 @@ TEST_NAME=""
 TEST_AGE=""
 
 # Define parameters using standard option names
-declare -A TEST_PARAMS=(
-    ["name:TEST_NAME"]="Person's name"
-    ["age:TEST_AGE"]="Person's age"
+declare -a TEST_PARAMS=(
+    "name:TEST_NAME::Person's name"
+    "age:TEST_AGE::Person's age"
 )
 
 # Process parameters using simple_handle
@@ -51,9 +51,9 @@ run_test "Standard option names: age" "$TEST_AGE" "42"
 echo -e "\n\e[1mTEST 2: Positional parameters\e[0m"
 TEST_NAME=""
 TEST_AGE=""
-declare -A TEST_PARAMS=(
-    ["name:TEST_NAME"]="Person's name"
-    ["age:TEST_AGE"]="Person's age"
+declare -a TEST_PARAMS=(
+    "name:TEST_NAME::Person's name"
+    "age:TEST_AGE::Person's age"
 )
 param_handler::simple_handle TEST_PARAMS "John Smith" "35"
 run_test "Positional params: name" "$TEST_NAME" "John Smith"
@@ -63,9 +63,9 @@ run_test "Positional params: age" "$TEST_AGE" "35"
 echo -e "\n\e[1mTEST 3: Parameters with spaces and special characters\e[0m"
 TEST_NAME=""
 TEST_AGE=""
-declare -A TEST_PARAMS=(
-    ["name:TEST_NAME"]="Person's name"
-    ["age:TEST_AGE"]="Person's age"
+declare -a TEST_PARAMS=(
+    "name:TEST_NAME::Person's name"
+    "age:TEST_AGE::Person's age"
 )
 param_handler::simple_handle TEST_PARAMS --name "Robert O'Neill Jr." --age "45+"
 run_test "Special chars: name" "$TEST_NAME" "Robert O'Neill Jr."
@@ -76,10 +76,10 @@ echo -e "\n\e[1mTEST 4: Empty and missing parameters\e[0m"
 TEST_NAME=""
 TEST_AGE=""
 TEST_CITY=""
-declare -A TEST_PARAMS=(
-    ["name:TEST_NAME"]="Person's name"
-    ["age:TEST_AGE"]="Person's age"
-    ["city:TEST_CITY"]="Person's city"
+declare -a TEST_PARAMS=(
+    "name:TEST_NAME::Person's name"
+    "age:TEST_AGE::Person's age"
+    "city:TEST_CITY::Person's city"
 )
 param_handler::simple_handle TEST_PARAMS --name "William Turner"
 run_test "Missing params: name" "$TEST_NAME" "William Turner"
@@ -94,16 +94,16 @@ ADMIN_NAME=""
 ADMIN_AGE=""
 
 # First parameter set
-declare -A USER_PARAMS=(
-    ["name:USER_NAME"]="User's name"
-    ["age:USER_AGE"]="User's age"
+declare -a USER_PARAMS=(
+    "name:USER_NAME::User's name"
+    "age:USER_AGE::User's age"
 )
 param_handler::simple_handle USER_PARAMS --name "Regular User" --age "30"
 
 # Second parameter set
-declare -A ADMIN_PARAMS=(
-    ["name:ADMIN_NAME"]="Admin's name"
-    ["age:ADMIN_AGE"]="Admin's age"
+declare -a ADMIN_PARAMS=(
+    "name:ADMIN_NAME::Admin's name"
+    "age:ADMIN_AGE::Admin's age"
 )
 param_handler::simple_handle ADMIN_PARAMS --name "System Admin" --age "35"
 

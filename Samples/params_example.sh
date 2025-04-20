@@ -33,10 +33,10 @@ else
 fi
 
 # First parameter set
-declare -A PARAMS1=(
-    ["name:NAME1"]="First name parameter"
-    ["age:AGE1"]="First age parameter"
-    ["place:PLACE1"]="First place parameter"
+declare -a PARAMS1=(
+    "name:NAME1::First name parameter"
+    "age:AGE1::First age parameter"
+    "place:PLACE1::First place parameter"
 )
 param_handler::simple_handle PARAMS1 "$@"
 
@@ -44,10 +44,10 @@ param_handler::simple_handle PARAMS1 "$@"
 unset NAME2 AGE2 PLACE2
 
 # Second parameter set
-declare -A PARAMS2=(
-    ["name:NAME2"]="Second name parameter"
-    ["age:AGE2"]="Second age parameter"
-    ["place:PLACE2"]="Second place parameter"
+declare -a PARAMS2=(
+    "name:NAME2::Second name parameter"
+    "age:AGE2::Second age parameter"
+    "place:PLACE2::Second place parameter"
 )
 param_handler::simple_handle PARAMS2 "$@"
 

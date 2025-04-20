@@ -32,6 +32,14 @@ else
     exit 1
 fi
 
+# Define parameters in an ordered array using colon-separated format (internal_name:VAR_NAME:option_name:description)
+declare -a PARAMS=(
+    "graphic:VIRT_GRAPHIC:virt-graphic:Virtual graphics configuration"
+    "video:VIRT_VIDEO:virt-video:Virtual video device settings"
+    "render:RENDER:render:Rendering mode (software/virtual)"
+    "gpu:GPU_VENDOR:gpu:GPU vendor (amd/nvidia/intel) or PCI address"
+)
+
 # Define a function to run a test case with the given parameters
 run_test() {
     # Store all arguments in an array
@@ -50,18 +58,20 @@ run_test() {
     msg_section "TEST ${test_num}: ${description}" 60
     msg_info "Command: $0 ${cmd_args[*]}"
     
+    # Display parameter order with numbers
+    local param_order=""
+    for i in "${!PARAMS[@]}"; do
+        local param_item="${PARAMS[$i]}"
+        local param_parts
+        IFS=':' read -ra param_parts <<< "$param_item"
+        param_order+="$(($i + 1)). ${param_parts[0]} (${param_parts[1]})  "
+    done
+    msg_info "Parameter order: ${param_order}"
+    
     # Reset variables for this test
     VIRT_GRAPHIC="" VIRT_VIDEO="" RENDER="" GPU_VENDOR=""
     
-    # Define parameters in a single associative array with format ["internal_name:VARIABLE_NAME:option_name"]="Description"
-    declare -A PARAMS=(
-        ["graphic:VIRT_GRAPHIC:virt-graphic"]="Virtual graphics configuration"
-        ["video:VIRT_VIDEO:virt-video"]="Virtual video device settings"
-        ["render:RENDER"]="Rendering mode (software/virtual)"
-        ["gpu:GPU_VENDOR"]="GPU vendor (amd/nvidia/intel) or PCI address"
-    )
-    
-    # Process all parameters in one step
+    # Process all parameters in one step using the global PARAMS array
     param_handler::simple_handle PARAMS "${cmd_args[@]}"
     
     # Print the parameter values and how they were set
@@ -77,15 +87,7 @@ run_test() {
 
 # If arguments are provided, run the script with those arguments
 if [[ $# -gt 0 ]]; then
-    # Define parameters in a single associative array
-    declare -A PARAMS=(
-        ["graphic:VIRT_GRAPHIC:virt-graphic"]="Virtual graphics configuration"
-        ["video:VIRT_VIDEO:virt-video"]="Virtual video device settings"
-        ["render:RENDER"]="Rendering mode (software/virtual)"
-        ["gpu:GPU_VENDOR"]="GPU vendor (amd/nvidia/intel) or PCI address"
-    )
-    
-    # Process all parameters in one step
+    # Process all parameters in one step using the global PARAMS array
     if ! param_handler::simple_handle PARAMS "$@"; then
         exit 0  # Help was shown, exit successfully
     fi
@@ -139,7 +141,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 # Run multiple test cases
-msg_header "Running multiple test cases for param_handler.sh"
+msg_header "Running multiple test cases for param_handler.sh (with ordered arrays)"
 
 # Tests with no parameters
 run_test 1 "No parameters" 

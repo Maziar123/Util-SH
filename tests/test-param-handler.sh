@@ -138,19 +138,19 @@ run_test "Mixed param: city (positional)" "$TEST_CITY" "Chicago"
 run_test "Named param count" "$(param_handler::get_named_count)" "1"
 run_test "Positional param count" "$(param_handler::get_positional_count)" "2"
 
-# ----- TEST 5: Using simple_handle function -----
-echo -e "\n\e[1mTEST 5: Using simple_handle function\e[0m"
+# ----- TEST 5: Using simple_handle with mixed parameters -----
+echo -e "\n\e[1mTEST 5: Using simple_handle with mixed parameters\e[0m"
 
 # Reset parameters
 TEST_NAME=""
 TEST_AGE=""
 TEST_CITY=""
 
-# Define parameters in a associative array
-declare -A TEST_PARAMS=(
-    ["name:TEST_NAME"]="Person's name"
-    ["age:TEST_AGE"]="Person's age"
-    ["city:TEST_CITY"]="Person's city"
+# Define parameters in an ordered array
+declare -a TEST_PARAMS=(
+    "name:TEST_NAME:name:Person's name"
+    "age:TEST_AGE:age:Person's age"
+    "city:TEST_CITY:city:Person's city"
 )
 
 # Process parameters using simple_handle
@@ -169,15 +169,14 @@ TEST_NAME=""
 TEST_AGE=""
 TEST_CITY=""
 
-# Define parameters in a associative array
-declare -A TEST_PARAMS=(
-    ["name:TEST_NAME"]="Person's name"
-    ["age:TEST_AGE"]="Person's age"
-    ["city:TEST_CITY"]="Person's city"
+# Define parameters in an ordered array
+declare -a TEST_PARAMS=(
+    "name:TEST_NAME:name:Person's name"
+    "age:TEST_AGE:age:Person's age"
+    "city:TEST_CITY:city:Person's city"
 )
 
 # Process parameters using simple_handle with named parameters only
-# since positional parameters aren't supported correctly
 param_handler::simple_handle TEST_PARAMS --name "David Lee" --age "45" --city "Phoenix"
 
 # Verify results
@@ -193,12 +192,11 @@ TEST_NAME=""
 TEST_AGE=""
 TEST_CITY=""
 
-# Define parameters in a associative array - using standard option names
-# without specifying custom option names
-declare -A TEST_PARAMS=(
-    ["name:TEST_NAME"]="Person's name"
-    ["age:TEST_AGE"]="Person's age" 
-    ["city:TEST_CITY"]="Person's city"
+# Define parameters in an ordered array - using standard option names
+declare -a TEST_PARAMS=(
+    "name:TEST_NAME::Person's name"
+    "age:TEST_AGE::Person's age" 
+    "city:TEST_CITY::Person's city"
 )
 
 # Process parameters using simple_handle with named parameters

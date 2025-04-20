@@ -90,11 +90,11 @@ setup_simple_handle() {
   TEST_AGE=""
   TEST_CITY=""
   
-  # Define parameters in associative array
-  declare -A TEST_PARAMS=(
-    ["name:TEST_NAME"]="Person's name"
-    ["age:TEST_AGE"]="Person's age"
-    ["city:TEST_CITY"]="Person's city"
+  # Define parameters in ordered array
+  declare -a TEST_PARAMS=(
+    "name:TEST_NAME:name:Person's name"
+    "age:TEST_AGE:age:Person's age"
+    "city:TEST_CITY:city:Person's city"
   )
   
   # Process parameters using simple_handle

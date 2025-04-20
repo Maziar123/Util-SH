@@ -33,10 +33,10 @@ echo -e "\n\e[1mTEST 1: Simple Handle with Standard Option Names\e[0m"
 
 # Define parameters with standard option names
 TEST_NAME="" TEST_AGE="" TEST_EMAIL=""
-declare -A SIMPLE_PARAMS=(
-    ["name:TEST_NAME"]="Person's name"                
-    ["age:TEST_AGE"]="Person's age"                   
-    ["email:TEST_EMAIL"]="Email address"              
+declare -a SIMPLE_PARAMS=(
+    "name:TEST_NAME::Person's name"
+    "age:TEST_AGE::Person's age"
+    "email:TEST_EMAIL::Email address"
 )
 
 # Process parameters using simple_handle
@@ -62,19 +62,19 @@ echo -e "\n\e[1mTEST 2: Simple API with Multiple Parameter Sets\e[0m"
 
 # First parameter set
 TEST_NAME1="" TEST_AGE1=""
-declare -A PARAMS1=(
-    ["name:TEST_NAME1"]="First name"
-    ["age:TEST_AGE1"]="First age"
+declare -a PARAMS1=(
+    "name:TEST_NAME1::First name"
+    "age:TEST_AGE1::First age"
 )
 param_handler::simple_handle PARAMS1 --name "John Doe" --age "30"
 
 # Second parameter set
 TEST_NAME2="" TEST_AGE2=""
-declare -A PARAMS2=(
-    ["name:TEST_NAME2"]="Second name"
-    ["age:TEST_AGE2"]="Second age"
+declare -a PARAMS2=(
+    "name:TEST_NAME2::Second name"
+    "age:TEST_AGE2::Second age"
 )
-param_handler::simple_handle PARAMS2 --name "Jane Smith" --age "25"
+param_handler::simple_handle PARAMS2 --name "Jane Doe" --age "28"
 
 echo "Multiple parameter sets results:"
 echo "Set 1 - Name: $TEST_NAME1, Age: $TEST_AGE1"
@@ -83,8 +83,8 @@ echo "Set 2 - Name: $TEST_NAME2, Age: $TEST_AGE2"
 # Verify results
 run_test "Multiple sets: first name" "$TEST_NAME1" "John Doe"
 run_test "Multiple sets: first age" "$TEST_AGE1" "30"
-run_test "Multiple sets: second name" "$TEST_NAME2" "Jane Smith"
-run_test "Multiple sets: second age" "$TEST_AGE2" "25"
+run_test "Multiple sets: second name" "$TEST_NAME2" "Jane Doe"
+run_test "Multiple sets: second age" "$TEST_AGE2" "28"
 
 # Export both sets
 echo -e "\nEnvironment export of multiple sets:"
