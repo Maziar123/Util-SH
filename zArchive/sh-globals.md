@@ -13,7 +13,7 @@ A comprehensive shell utility library providing common functions and constants f
 
 ```bash
 source "$(dirname "$0")/sh-globals.sh"
-sh-globals:init "$@"  # Initialize with script arguments
+sh-globals_init "$@"  # Initialize with script arguments
 ```
 
 ## Key Features
@@ -665,14 +665,14 @@ echo "Hostname: $hostname"
 
 | Function | Description |
 |----------|-------------|
-| `sh-globals:init [args...]` | Initialize the shell globals |
+| `sh-globals_init [args...]` | Initialize the shell globals |
 
 Example:
 
 ```bash
 # Source the utilities and initialize
 source "$(dirname "$0")/sh-globals.sh"
-sh-globals:init "$@"
+sh-globals_init "$@"
 
 # This does:
 # - Sets up trap handlers
@@ -695,7 +695,7 @@ log_info "Script starting"
 
 # Source the utilities
 source "$(dirname "$0")/sh-globals.sh"
-sh-globals:init "$@"
+sh-globals_init "$@"
 
 # Initialize logging with defaults (uses script_name.log in current directory)
 log_init

@@ -1,164 +1,45 @@
-# Bash Utility Libraries
+\
+# sh-globals.sh - Comprehensive Bash Utility Library
 
-A collection of comprehensive shell utility libraries providing common functions and tools for bash scripts.
-
-## Table of Contents
-
-- [Bash Utility Libraries](#bash-utility-libraries)
-  - [Table of Contents](#table-of-contents)
-  - [Overview](#overview)
-  - [Installation](#installation)
-  - [Dependencies](#dependencies)
-- [Library 1: sh-globals.sh](#library-1-sh-globalssh)
-  - [Key Features](#key-features)
-  - [Getting Started](#getting-started)
-  - [Initialization](#initialization)
-  - [Function Reference](#function-reference)
-    - [1. Color and Formatting](#1-color-and-formatting)
-    - [2. Message Functions](#2-message-functions)
-    - [3. Robust Logging System](#3-robust-logging-system)
-    - [4. Advanced String Operations](#4-advanced-string-operations)
-    - [5. Array Functions](#5-array-functions)
-    - [6. File \& Directory Management](#6-file--directory-management)
-    - [7. User Interaction Functions](#7-user-interaction-functions)
-    - [8. System and Environment Functions](#8-system-and-environment-functions)
-    - [9. OS Detection Functions](#9-os-detection-functions)
-    - [10. Date \& Time Functions](#10-date--time-functions)
-    - [11. Networking Functions](#11-networking-functions)
-    - [12. Script Lock Functions](#12-script-lock-functions)
-    - [13. Error Handling Functions](#13-error-handling-functions)
-    - [14. Dependency Management](#14-dependency-management)
-    - [15. Number Formatting Functions](#15-number-formatting-functions)
-    - [16. Path Navigation Functions](#16-path-navigation-functions)
-  - [Advanced Usage Patterns](#advanced-usage-patterns)
-    - [Complete Error Handling Example](#complete-error-handling-example)
-    - [Temporary File Management Pattern](#temporary-file-management-pattern)
-  - [Tips for Effective Use of sh-globals.sh](#tips-for-effective-use-of-sh-globalssh)
-- [Library 2: param\_handler.sh](#library-2-param_handlersh)
-  - [Key Features](#key-features-1)
-  - [Quick Start](#quick-start)
-  - [PARAMS Array Format](#params-array-format)
-    - [Basic Format](#basic-format)
-    - [Extended Format](#extended-format)
-    - [Format Components](#format-components)
-    - [Examples](#examples)
-      - [1. Basic Example](#1-basic-example)
-      - [2. Custom Option Names](#2-custom-option-names)
-      - [3. Required Parameters](#3-required-parameters)
-    - [Usage Examples](#usage-examples)
-      - [Example 1: Basic Parameters](#example-1-basic-parameters)
-      - [Example 2: Custom Option Names](#example-2-custom-option-names)
-      - [Example 3: Mixed Parameters](#example-3-mixed-parameters)
-  - [Parameter Validation](#parameter-validation)
-  - [Accessing Parameter Values](#accessing-parameter-values)
-    - [1. Direct Variable Access](#1-direct-variable-access)
-    - [2. Check How Parameters Were Set](#2-check-how-parameters-were-set)
-    - [3. Get Parameter Values Programmatically](#3-get-parameter-values-programmatically)
-    - [4. Print All Parameters](#4-print-all-parameters)
-  - [Core Functions Reference](#core-functions-reference)
-    - [Simple API (Recommended)](#simple-api-recommended)
-    - [Display Functions](#display-functions)
-    - [Export Functions](#export-functions)
-  - [Parameter Type Example](#parameter-type-example)
-  - [Complete Example with Required Parameters and Validation](#complete-example-with-required-parameters-and-validation)
-  - [Tips for Effective Use of param\_handler.sh](#tips-for-effective-use-of-param_handlersh)
-- [Combined Usage Example](#combined-usage-example)
-  - [License](#license)
+A comprehensive shell utility library providing common functions, constants, and tools for bash scripts.
 
 ## Overview
 
-This repository contains multiple utility libraries designed to simplify shell scripting:
+`sh-globals.sh` is a reusable library designed to simplify shell scripting by providing a wide range of carefully crafted functions, consistent error handling, and standardized output formatting. It enhances shell scripts with functionality including:
 
-1. **sh-globals.sh**: A comprehensive shell utility library with color definitions, string operations, file handling, error management, and more.
-2. **param_handler.sh**: A lightweight Bash library for handling both named and positional command-line parameters in shell scripts.
-
-These libraries aim to make shell scripting more robust, maintainable, and easier to implement.
+- **Terminal Output Enhancement**: Rich color and formatting options for better user experience.
+- **Robust Logging System**: Multi-level logging with file and console output.
+- **Advanced String Operations**: Comprehensive string manipulation functions.
+- **File System Tools**: Safe file operations with validation and error handling.
+- **Error Management**: Error trapping, cleanup, and stack traces.
+- **User Interaction Helpers**: User prompts, confirmations, and secure input.
+- **System Information**: OS detection, environment management, and user/host information.
+- **Path Manipulation**: Advanced path operations and source file management.
+- **Temporary Resource Management**: Auto-cleanup of temporary files and directories.
+- **Process Control**: Script locking to prevent concurrent execution.
+- **Human-Readable Formatting**: Number and date formatting for better readability.
+- **Dependency Management**: Checks for required command-line tools.
 
 ## Installation
 
-1. Download the required files:
+1.  Download the `sh-globals.sh` file to your project directory.
+2.  Make the script executable:
+    ```bash
+    chmod +x sh-globals.sh
+    ```
+3.  Source it at the beginning of your scripts:
+    ```bash
+    #!/usr/bin/env bash
 
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/Util-Sh.git
-cd Util-Sh
-```
+    # Source the library
+    source "$(dirname "$0")/sh-globals.sh"
 
-2. Make the scripts executable:
+    # Initialize with your script's arguments (IMPORTANT)
+    sh-globals_init "$@"
 
-```bash
-chmod +x sh-globals.sh param_handler.sh
-```
-
-3. Source the libraries in your script:
-
-```bash
-#!/usr/bin/env bash
-source "$(dirname "$0")/sh-globals.sh"
-source "$(dirname "$0")/param_handler.sh"
-
-# Initialize libraries
-sh-globals_init "$@"
-```
-
-## Dependencies
-
-The `param_handler.sh` library depends on [getoptions](https://github.com/ko1nksm/getoptions), a powerful command-line argument parser for shell scripts.
-
-- **Repository**: [ko1nksm/getoptions](https://github.com/ko1nksm/getoptions)
-- **License**: [Creative Commons Zero v1.0 Universal](https://github.com/ko1nksm/getoptions/blob/master/LICENSE)
-- **Version**: v3.3.2 (included in this project)
-
----
-
-# Library 1: sh-globals.sh
-
-`sh-globals.sh` is a comprehensive utility library that enhances your shell scripts with a wide range of functionality through carefully crafted functions, consistent error handling, and standardized output formatting.
-
-## Key Features
-
-- **Terminal Output Enhancement**: Rich color and formatting options for better user experience
-- **Robust Logging System**: Multi-level logging with file and console output
-- **Advanced String Operations**: Comprehensive string manipulation functions
-- **File System Tools**: Safe file operations with validation and error handling
-- **Error Management**: Error trapping, cleanup, and stack traces
-- **User Interaction Helpers**: User prompts, confirmations, and secure input
-- **System Information**: OS detection, environment management, and user/host information
-- **Path Manipulation**: Advanced path operations and source file management
-- **Temporary Resource Management**: Auto-cleanup of temporary files and directories
-- **Process Control**: Script locking to prevent concurrent execution
-- **Human-Readable Formatting**: Number and date formatting for better readability
-
-## Getting Started
-
-```bash
-#!/usr/bin/env bash
-
-# Source the library
-source "$(dirname "$0")/sh-globals.sh"
-
-# Initialize with your script's arguments (IMPORTANT)
-sh-globals_init "$@"
-
-# Now you can use all the library functions
-msg_header "Welcome to My Script"
-msg_info "Running as user: $(get_current_user)"
-msg_info "Operating system: $(get_os)"
-
-# Check for required dependencies
-if ! check_dependencies curl jq; then
-  msg_error "Missing required tools"
-  exit 1
-fi
-
-# Create a lock to prevent multiple instances
-if ! create_lock; then
-  msg_error "Another instance is already running"
-  exit 1
-fi
-
-# Script logic follows...
-```
+    # Now you can use all the library functions
+    msg_info "Script initialized."
+    ```
 
 ## Initialization
 
@@ -196,7 +77,7 @@ if [[ "$VERBOSE" -eq 1 ]]; then
 fi
 ```
 
-## Function Reference
+## Key Features & Function Reference
 
 ### 1. Color and Formatting
 
@@ -289,6 +170,11 @@ Multi-level logging with optional timestamping and file output. Useful for track
 | `log_success [message...]`                   | Log success message                                       | `message...`                            | None    |
 | `log_with_timestamp [level] [message...]`    | Log with custom level and timestamp                       | `level` `message...`                    | None    |
 
+**Initialization (`log_init`)**:
+
+-   `log_file`: Path to the log file. If omitted, defaults to `script_name.log` in the current directory.
+-   `save_to_file`: Set to `1` (default) to save logs to the file, `0` to log only to the console (stderr/stdout).
+
 Example:
 
 ```bash
@@ -309,6 +195,23 @@ log_success "Backup completed successfully"
 
 # Custom timestamp logging
 log_with_timestamp "CUSTOM" "Special event occurred"
+
+# Output to terminal (colors vary):
+# [INFO] Operation started
+# [WARN] Resource usage high
+# [ERROR] Failed to connect to server
+# [DEBUG] Variable state: value=example
+# [SUCCESS] Backup completed successfully
+# [2023-10-27 10:30:00] CUSTOM: Special event occurred
+
+# File content (/var/log/myscript.log if initialized):
+# [2023-10-27 10:29:59] INFO: Logging initialized to /var/log/myscript.log
+# [2023-10-27 10:30:00] INFO: Operation started
+# [2023-10-27 10:30:00] WARN: Resource usage high
+# [2023-10-27 10:30:00] ERROR: Failed to connect to server
+# [2023-10-27 10:30:00] DEBUG: Variable state: value=example
+# [2023-10-27 10:30:00] SUCCESS: Backup completed successfully
+# [2023-10-27 10:30:00] CUSTOM: Special event occurred
 ```
 
 ### 4. Advanced String Operations
@@ -380,6 +283,10 @@ if array_contains "banana" "${fruits[@]}"; then
   echo "Array contains banana" # Prints
 fi
 
+if ! array_contains "kiwi" "${fruits[@]}"; then
+  echo "Array does not contain kiwi" # Prints
+fi
+
 # Join array elements
 joined=$(array_join ", " "${fruits[@]}")
 echo "Joined: $joined" # Output: apple, banana, orange, grape
@@ -409,6 +316,8 @@ Includes functions for safe file operations, checks, and temporary resource mana
 | `get_file_basename [filename]`                   | Get filename without extension         | `filename`                      | Base filename       |
 | `cleanup_temp`                                   | Manually clean up temp files/dirs      | None                            | None                |
 
+**Temporary Resource Management**: Files and directories created with `create_temp_file` and `create_temp_dir` are automatically registered for cleanup when the script exits (due to the `EXIT` trap set by `sh-globals_init`).
+
 Example:
 
 ```bash
@@ -421,10 +330,47 @@ fi
 # Safe directory creation
 safe_mkdir "/var/data/app/logs"
 
+# File testing with better output
+if ! file_exists "/etc/config.json"; then
+  msg_error "Configuration file missing: /etc/config.json"
+  exit 1
+fi
+
+if dir_exists "/tmp/my_app"; then
+  msg_info "App directory exists"
+fi
+
+# Get file information
+size=$(file_size "data.log")
+msg_info "Log file size: $size bytes"
+
+filename="archive.tar.gz"
+ext=$(get_file_extension "$filename")    # "gz"
+base=$(get_file_basename "$filename")    # "archive.tar"
+msg_info "File: $filename, Base: $base, Extension: $ext"
+
+# Safe copy
+if safe_copy "source.txt" "backup/source.bak"; then
+  msg_success "Backup created."
+else
+  msg_error "Failed to create backup."
+fi
+
 # Temporary file handling (auto-cleaned on exit)
 temp_data=$(create_temp_file "data_proc_XXXX")
 temp_dir=$(create_temp_dir "results_XXXX")
 msg_info "Using temp file $temp_data and temp dir $temp_dir"
+echo "Processing data..." > "$temp_data"
+# ... process data, put results in $temp_dir ...
+
+# Wait for file to appear (useful for async operations)
+touch ./signal.file & # Simulate background task creating a file
+if wait_for_file "./signal.file" 5; then # Wait up to 5 seconds
+  msg_success "Signal file detected."
+  rm ./signal.file
+else
+  msg_error "Timed out waiting for signal file."
+fi
 ```
 
 ### 7. User Interaction Functions
@@ -441,12 +387,15 @@ Functions to prompt the user for input, confirmation, and validated values.
 | `get_path [prompt] [default] [type] [must_exist=0]`           | Get file/directory path with validation  | `[prompt]` `[default]` `[type]` `[must_exist]`   | Path string      |
 | `get_value [prompt] [default] [validator_func] [error_msg]` | Get value with custom validation function| `[prompt]` `[default]` `[validator]` `[error_msg]`| Validated value |
 
+**Validation Functions (`get_number`, `get_string`, `get_path`, `get_value`)**: These functions will re-prompt the user until valid input is provided according to the specified constraints (range, pattern, existence, custom function).
+
 Example:
 
 ```bash
 # Simple confirmation (returns 0 for yes, 1 for no)
 if confirm "Delete all temporary files?" "n"; then
   msg_info "Deleting files..."
+  # ... delete files ...
 else
   msg_info "Deletion cancelled."
 fi
@@ -455,9 +404,32 @@ fi
 name=$(prompt_input "Enter your name" "guest")
 msg_info "Hello, $name!"
 
+# Secure password input (hidden)
+password=$(prompt_password "Enter database password:")
+# Use "$password" carefully
+
 # Validated numeric input
 port=$(get_number "Enter server port" "8080" "1" "65535")
 msg_info "Using port: $port"
+
+# String with pattern validation
+email=$(get_string "Enter your email" "" "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" "Invalid email format")
+msg_info "Email set to: $email"
+
+# Path validation
+config_file=$(get_path "Enter config file path" "./app.conf" "file" "1") # Must be an existing file
+msg_info "Using config file: $config_file"
+
+output_dir=$(get_path "Enter output directory" "/tmp/output" "dir" "0") # Can be non-existent directory
+msg_info "Output directory: $output_dir"
+
+# Custom validation function
+validate_hostname() {
+  # Simple check: allow letters, numbers, hyphens, dots
+  [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9\.-]*[a-zA-Z0-9]$ ]]
+}
+server=$(get_value "Enter server hostname" "server1.example.com" validate_hostname "Invalid hostname format")
+msg_info "Server hostname: $server"
 ```
 
 ### 8. System and Environment Functions
@@ -477,10 +449,25 @@ Example:
 # Environment variables
 api_key=$(env_or_default "API_KEY" "default-key")
 log_level=$(env_or_default "LOG_LEVEL" "INFO")
+msg_info "Using API Key (masked): ${api_key:0:3}..." # Be careful logging secrets
+msg_info "Log Level: $log_level"
 
 # Privilege checks
 if ! is_root; then
   msg_warning "This script ideally runs as root, but proceeding."
+fi
+# Or enforce root:
+# require_root # Script exits here if not root
+
+# Get user/host info
+user=$(get_current_user)
+host=$(get_hostname)
+msg_info "Running as user '$user' on host '$host'"
+
+# Flags like DEBUG, VERBOSE are parsed by sh-globals_init
+# Access them directly:
+if [[ "${DEBUG:-0}" -eq 1 ]]; then
+  msg_debug "Debug messages are enabled."
 fi
 ```
 
@@ -505,6 +492,16 @@ msg_info "Architecture: $arch"
 if [[ "$os_type" == "linux" ]]; then
   distro=$(get_linux_distro)
   msg_info "Linux Distribution: $distro" # e.g., ubuntu, debian, centos
+  # Add Linux-specific logic here
+elif [[ "$os_type" == "mac" ]]; then
+  msg_info "Running on macOS"
+  # Add macOS-specific logic here
+fi
+
+if is_in_container; then
+  msg_info "Running inside a container (Docker, LXC, etc.)"
+else
+  msg_info "Not running inside a known container type."
 fi
 ```
 
@@ -515,6 +512,8 @@ fi
 | `get_timestamp`                              | Get current timestamp (Unix epoch seconds)| None                            | Timestamp (integer)   |
 | `format_date [format=%Y-%m-%d] [timestamp=now]` | Format date/time using `strftime`       | `[format]` `[timestamp]`        | Formatted date string |
 | `time_diff_human [start] [end=now]`          | Human-readable time difference          | `start_ts` `[end_ts]`           | Formatted time string |
+
+**Note on `format_date`**: Uses `TZ=UTC` internally for consistent output regardless of the system's timezone.
 
 Example:
 
@@ -527,6 +526,14 @@ msg_info "Operation started at: $start_time"
 today=$(format_date "%Y-%m-%d") # Default format
 log_ts=$(format_date "%Y%m%d_%H%M%S")
 iso_ts=$(format_date "%Y-%m-%dT%H:%M:%SZ") # ISO 8601 format in UTC
+msg_info "Today (UTC): $today"
+msg_info "Timestamp for logs: $log_ts"
+msg_info "ISO Timestamp: $iso_ts"
+
+# Format a specific timestamp
+past_event_ts=1609459200 # Jan 1, 2021 00:00:00 UTC
+past_event_str=$(format_date "%Y-%m-%d %H:%M:%S" "$past_event_ts")
+msg_info "Past event occurred at (UTC): $past_event_str" # Output: 2021-01-01 00:00:00
 
 # Do some work...
 sleep 3
@@ -534,7 +541,14 @@ sleep 3
 # Get elapsed time in human-readable format
 end_time=$(get_timestamp)
 elapsed=$(time_diff_human "$start_time" "$end_time") # e.g., "3s"
+elapsed_long=$(time_diff_human "$start_time")      # Implicitly uses current time as end
 msg_info "Operation completed in $elapsed"
+
+# Example of longer durations
+diff1=$(time_diff_human 0 95)       # "1m 35s"
+diff2=$(time_diff_human 0 3725)     # "1h 2m 5s"
+diff3=$(time_diff_human 0 90061)    # "1d 1h 1m 1s"
+msg_info "Examples: 95s=$diff1, 3725s=$diff2, 90061s=$diff3"
 ```
 
 ### 11. Networking Functions
@@ -544,6 +558,8 @@ msg_info "Operation completed in $elapsed"
 | `is_url_reachable [url] [timeout=5]`         | Check if URL is reachable (HEAD/GET) | `url` `[timeout]`             | Boolean (exit code) |
 | `get_external_ip`                            | Get external/public IP address   | None                          | IP address string   |
 | `is_port_open [host] [port] [timeout=2]`     | Check if TCP port is open on host| `host` `port` `[timeout]`     | Boolean (exit code) |
+
+**Dependencies**: These functions rely on `curl` or `wget` (`is_url_reachable`, `get_external_ip`) and `nc` (netcat) (`is_port_open`). Ensure these are installed.
 
 Example:
 
@@ -559,6 +575,17 @@ fi
 my_ip=$(get_external_ip)
 if [[ -n "$my_ip" ]]; then
   msg_info "My external IP address: $my_ip"
+else
+  msg_warning "Could not determine external IP address."
+fi
+
+# Check service port
+db_host="db.internal.net"
+db_port=5432
+if is_port_open "$db_host" "$db_port" 2; then
+  msg_success "Database port $db_port is open on $db_host."
+else
+  msg_warning "Database port $db_port seems closed on $db_host."
 fi
 ```
 
@@ -571,27 +598,87 @@ Prevents multiple instances of the script from running simultaneously using a lo
 | `create_lock [lock_file]`    | Create lock file (fails if valid lock exists)       | `[lock_file]` | Boolean (exit code) |
 | `release_lock`               | Release the lock file (usually done automatically) | None          | None                |
 
+**Lock File Path**: If `lock_file` is not provided to `create_lock`, it defaults to `/tmp/script_name.lock`.
+**Automatic Release**: The lock is automatically released when the script exits (cleanly or via error) due to the `EXIT` trap set by `sh-globals_init`. `release_lock` is mostly for manual release if needed before script end.
+
 Example:
 
 ```bash
+# Define a custom lock file path (optional)
+LOCK_FILE="/var/run/my_app/$(get_script_name).pid"
+
 # Attempt to create the lock
-if ! create_lock; then
-  msg_error "Another instance is already running."
+if ! create_lock "$LOCK_FILE"; then
+# Or use default: if ! create_lock; then
+  msg_error "Another instance is already running. Check lock file: $LOCK_FILE"
   exit 1
 fi
 
-msg_success "Lock acquired. Running exclusively."
+msg_success "Lock acquired ($LOCK_FILE). Running exclusively."
+
+# --- Main script logic here ---
+# ... do work ...
+sleep 10
 
 # Lock will be released automatically on exit.
+# Manual release example (rarely needed):
+# msg_info "Releasing lock manually..."
+# release_lock
+
+msg_success "Script finished."
 ```
 
 ### 13. Error Handling Functions
+
+Provides mechanisms for error trapping and stack traces.
 
 | Function                                | Description                                  | Parameters                | Returns |
 | :-------------------------------------- | :------------------------------------------- | :------------------------ | :------ |
 | `print_stack_trace`                     | Print the current function call stack        | None                      | None    |
 | `error_handler [exit_code] [line_number]` | Default ERR trap handler (logs, cleans up) | `exit_code` `line_number` | None    |
 | `setup_traps`                           | Setup ERR and EXIT traps (used by init)    | None                      | None    |
+
+**Automatic Handling**: `sh-globals_init` calls `setup_traps`, which sets the `error_handler` function to be called automatically when any command fails (due to `set -e`). The error handler logs the error, prints a stack trace, cleans up temporary resources and locks, and then exits the script with the command's exit code.
+
+Example:
+
+```bash
+# setup_traps is called by sh-globals_init automatically
+
+# Function to demonstrate stack trace
+function inner_function() {
+  msg_info "Inside inner_function"
+  # Manually print stack trace (for debugging, not typically needed)
+  print_stack_trace
+  # Cause an error
+  ls /nonexistent_directory
+}
+
+function outer_function() {
+  msg_info "Inside outer_function"
+  inner_function
+}
+
+msg_info "Calling outer_function..."
+outer_function
+msg_info "This message will not be reached if an error occurs above."
+
+# Example Output on Error:
+# Calling outer_function...
+# Inside outer_function
+# Inside inner_function
+# Stack trace:
+#   1: ./my_script.sh:55 in function inner_function
+#   2: ./my_script.sh:61 in function outer_function
+#   3: ./my_script.sh:64 in function main
+# ls: cannot access '/nonexistent_directory': No such file or directory
+# [ERROR] Error on line 58, exit code 2
+# Stack trace:
+#   1: ./my_script.sh:58 in function inner_function
+#   2: ./my_script.sh:61 in function outer_function
+#   3: ./my_script.sh:64 in function main
+# (Script exits here, temporary files/locks cleaned up)
+```
 
 ### 14. Dependency Management
 
@@ -607,9 +694,13 @@ if ! check_dependencies git docker kubectl helm; then
   msg_error "Please install the missing tools and try again."
   exit 1
 fi
+
+msg_success "All required dependencies found: git, docker, kubectl, helm"
 ```
 
 ### 15. Number Formatting Functions
+
+Format numbers into human-readable strings using SI prefixes or byte units.
 
 | Function                                  | Description                                     | Parameters             | Returns          |
 | :---------------------------------------- | :---------------------------------------------- | :--------------------- | :--------------- |
@@ -621,14 +712,36 @@ Example:
 ```bash
 # Format numbers with SI prefixes
 users=8543210
+rate=0.00045
+large_num=1234567890123
 formatted_users=$(format_si_number "$users")      # "8.5M"
+formatted_rate=$(format_si_number "$rate" 3)      # "450.0μ" (micro)
+formatted_large=$(format_si_number "$large_num" 2) # "1.23T"
+
+msg_info "Users: $formatted_users"
+msg_info "Rate: $formatted_rate /s"
+msg_info "Large Number: $formatted_large"
 
 # Format bytes with appropriate units
 file_size_bytes=2684354560
-formatted_size=$(format_bytes "$file_size_bytes") # "2.5GB"
+small_size_bytes=1536
+formatted_size=$(format_bytes "$file_size_bytes")      # "2.5GB"
+formatted_small=$(format_bytes "$small_size_bytes")   # "1.5KB"
+precise_size=$(format_bytes 1500000 2)               # "1.43MB"
+
+msg_info "File Size: $formatted_size"
+msg_info "Small Size: $formatted_small"
+msg_info "Precise Size: $precise_size"
+
+# Display disk usage (example using system command + formatting)
+# disk_used_bytes=$(df / | awk 'NR==2 {print $3 * 1024}') # Example command
+# formatted_disk_used=$(format_bytes "$disk_used_bytes" 1)
+# msg_info "Disk Used: $formatted_disk_used"
 ```
 
 ### 16. Path Navigation Functions
+
+Utilities for manipulating file paths and sourcing files relative to the script.
 
 | Function                                     | Description                                | Parameters                    | Returns               |
 | :------------------------------------------- | :----------------------------------------- | :---------------------------- | :-------------------- |
@@ -651,12 +764,46 @@ Example:
 script_dir=$(get_script_dir)
 script_name=$(get_script_name)
 script_path=$(get_script_path)
-log_info "Running script: $script_name in $script_dir"
+log_info "Running script: $script_name in $script_dir (Full path: $script_path)"
+
+# Path navigation
+config_dir=$(get_parent_dir "$script_dir")
+log_info "Parent (config?) directory: $config_dir"
+
+project_root=$(get_parent_dir_n "$script_dir" 2)
+log_info "Project root (2 levels up): $project_root"
+
+# Get absolute path relative to script
+data_file_path=$(path_relative_to_script "../data/input.csv")
+log_info "Absolute path to data file: $data_file_path"
+
+# Convert potentially relative path to absolute
+user_input_path="./output"
+absolute_output_path=$(to_absolute_path "$user_input_path")
+log_info "Absolute output path: $absolute_output_path"
+
+# Source a library relative to the script
+if ! source_relative "../lib/common_funcs.sh"; then
+  msg_error "Failed to source common functions library."
+  exit 1
+fi
+
+# Source a utility with fallbacks
+if ! source_with_fallbacks "config.sh" "conf/settings.sh" "/etc/app/config.sh"; then
+  msg_warning "Could not find config.sh using fallback paths."
+fi
+
+# Create parent path references
+three_levels_up=$(parent_path 3) # "../../../"
+log_info "Path to go three levels up: $three_levels_up"
+cd "$project_root/${three_levels_up}some/other/branch" # Example usage
 ```
 
 ## Advanced Usage Patterns
 
 ### Complete Error Handling Example
+
+Leveraging `set -e` and the automatic `error_handler` trap.
 
 ```bash
 #!/usr/bin/env bash
@@ -664,46 +811,52 @@ source "$(dirname "$0")/sh-globals.sh"
 sh-globals_init "$@"
 
 # Initialize logging
-log_init "/var/log/myapp.log"
+log_init "/var/log/myapp_adv.log"
 
-# Function that may fail
+# Function that might fail
 perform_operation() {
   local path="$1"
-  
-  if [[ ! -d "$path" ]]; then
-    # This will trigger the error handler due to set -e
-    return 1
-  fi
-  
-  # Successful operation
+  msg_info "Attempting operation on: $path"
+
+  # This command will fail if path doesn't exist, triggering ERR trap
+  ls "$path" > /dev/null
+
+  # This part is reached only if ls succeeds
+  msg_success "Operation successful on: $path"
   return 0
 }
 
 # Main processing logic
 main() {
-  log_info "Script started"
-  
+  log_info "Advanced Script started"
+
   # Create a lock
   if ! create_lock; then
-    log_error "Another instance is already running"
-    exit 1
+    # error_handler will NOT be called for explicit exit
+    log_error "Another instance is already running. Exiting."
+    exit 1 # Manually exit; cleanup trap still runs
   fi
-  
+  log_info "Lock acquired."
+
   # Perform operations
-  if ! perform_operation "/nonexistent/path"; then
-    log_error "Operation failed"
-    # No need to exit, cleanup is handled automatically
-    return 1
-  fi
-  
-  log_success "Script completed successfully"
+  perform_operation "/etc/hosts" # This should succeed
+
+  # This will likely fail and trigger the error handler
+  perform_operation "/nonexistent/path/here"
+
+  # This line will not be reached if the previous command failed
+  log_success "Script completed all operations successfully"
 }
 
 # Run main function
 main
+# The EXIT trap ensures cleanup_temp and release_lock run regardless
+# of whether the script exits normally or via the error_handler.
 ```
 
 ### Temporary File Management Pattern
+
+Using `create_temp_file` and `create_temp_dir` for automatically cleaned resources.
 
 ```bash
 #!/usr/bin/env bash
@@ -711,522 +864,80 @@ source "$(dirname "$0")/sh-globals.sh"
 sh-globals_init "$@"
 
 process_data() {
-  # Create temporary resources
-  local temp_dir=$(create_temp_dir)
-  local temp_file1=$(create_temp_file)
-  local temp_file2=$(create_temp_file)
-  
-  # Download data
-  wget -q "https://example.com/data.csv" -O "$temp_file1"
-  
-  # Process data
-  sort "$temp_file1" > "$temp_file2"
-  cut -d, -f1,2 "$temp_file2" > "$temp_dir/result.csv"
-  
-  # Files will be automatically cleaned up on script exit
-  echo "$temp_dir/result.csv"
+  local url="$1"
+  local output_file="$2"
+
+  msg_info "Processing data from $url"
+
+  # Create temporary resources needed for processing
+  local temp_dir
+  local raw_data_file
+  local sorted_data_file
+  temp_dir=$(create_temp_dir "dataproc_XXXXXX")
+  raw_data_file=$(create_temp_file "raw_XXXXXX")
+  sorted_data_file=$(create_temp_file "sorted_XXXXXX")
+  msg_debug "Using temp dir: $temp_dir"
+  msg_debug "Using raw data file: $raw_data_file"
+  msg_debug "Using sorted data file: $sorted_data_file"
+
+  # Simulate download
+  msg_info "Downloading data..."
+  # curl -sSL "$url" -o "$raw_data_file" # Real command
+  echo -e "banana\napple\norange" > "$raw_data_file" # Dummy data
+  if [[ $? -ne 0 ]]; then
+     msg_error "Failed to download data"
+     return 1 # Error handler will trigger cleanup
+  fi
+
+  # Simulate processing (sort)
+  msg_info "Sorting data..."
+  sort "$raw_data_file" > "$sorted_data_file"
+  if [[ $? -ne 0 ]]; then
+     msg_error "Failed to sort data"
+     return 1 # Error handler will trigger cleanup
+  fi
+
+  # Simulate final step (copy result)
+  msg_info "Saving final result to $output_file"
+  cp "$sorted_data_file" "$output_file"
+  if [[ $? -ne 0 ]]; then
+     msg_error "Failed to save final result"
+     return 1 # Error handler will trigger cleanup
+  fi
+
+  # Temp files/dir ($temp_dir, $raw_data_file, $sorted_data_file)
+  # will be automatically cleaned up on script exit (success or error).
+  msg_success "Data processing complete. Result in $output_file"
+  return 0
 }
 
 # Main script
-result_file=$(process_data)
-msg_success "Data processed and saved to $result_file"
-cat "$result_file"
-```
+OUTPUT_DIR="./processed_results"
+safe_mkdir "$OUTPUT_DIR"
+RESULT_FILE="$OUTPUT_DIR/final_data.txt"
+DATA_URL="http://example.com/dummy_data.txt" # Dummy URL
 
-## Tips for Effective Use of sh-globals.sh
-
-1.  **Always Initialize**: Call `sh-globals_init "$@"` at the beginning of your script to set up traps and other features.
-2.  **Prefer msg_* over echo**: Use `msg_info`, `msg_error`, etc. instead of direct echo commands for consistent, colorized output.
-3.  **Use log_* for persistent logs**: When you need to track script execution over time, initialize logging with `log_init` and use the `log_*` functions.
-4.  **Let error handling work for you**: The library sets up error trapping automatically. Let errors propagate naturally and rely on the cleanup functions.
-5.  **Leverage temporary resource creation**: Use `create_temp_file` and `create_temp_dir` to get auto-cleaned temporary resources.
-6.  **Build on validation functions**: Compose complex validation by combining the `get_*` input functions with custom validators.
-
-# Library 2: param_handler.sh
-
-The `param_handler.sh` library simplifies handling both named and positional command-line parameters in shell scripts.
-
-## Key Features
-
-- Handle both named (`--option value`) and positional parameters in a single script
-- Automatic parameter registration and management
-- Built-in help message generation
-- Color-coded output for better readability
-- Parameter value retrieval and state checking
-- Multiple display formats
-- JSON export capability
-- Environment variable export with prefix support
-- Required parameters with validation
-- Parameter validation using custom functions
-
-## Quick Start
-
-```bash
-#!/usr/bin/bash
-source param_handler.sh
-
-# Define parameters in an indexed array
-# Format: "internal_name:VARIABLE_NAME[:option_name]:Description[:REQUIRE][:getter_func]"
-declare -a PARAMS=(
-    # Basic format: internal_name:VARIABLE_NAME:Description
-    "name:NAME:Person's name"  # Creates $NAME and --name option
-    
-    # Basic format: internal_name:VARIABLE_NAME:Description
-    "age:AGE:Person's age"     # Creates $AGE and --age option
-    
-    # Extended format: internal_name:VARIABLE_NAME:option_name:Description
-    "location:LOCATION:place:Person's location"  # Creates $LOCATION and --place option
-)
-
-# Process all parameters in one step
-if ! param_handler::simple_handle PARAMS "$@"; then
-    exit 0  # Help was shown, exit successfully
-fi
-
-# Use the parameters
-echo "Hello, $NAME! You are $AGE years old and from $LOCATION."
-```
-
-## PARAMS Array Format
-
-The `PARAMS` array uses a specific format to define parameters:
-
-### Basic Format
-
-```bash
-declare -a PARAMS=(
-    "internal_name:VARIABLE_NAME:Description"
-)
-```
-
-### Extended Format
-
-```bash
-declare -a PARAMS=(
-    "internal_name:VARIABLE_NAME:option_name:Description[:REQUIRE][:getter_func]"
-)
-```
-
-### Format Components
-
-1. **Core Components** (required):
-   - `internal_name`: Used internally by the library (e.g., "user", "server")
-   - `VARIABLE_NAME`: The actual variable name in your script (e.g., "USERNAME", "SERVER_ADDRESS")
-
-2. **Optional Components**:
-   - `option_name`: Custom name for the command-line option (default: internal_name)
-   - `REQUIRE`: Mark the parameter as required
-   - `getter_func`: Function name to validate or prompt for the parameter
-
-3. **Description**: Help text displayed in the help message
-
-### Examples
-
-#### 1. Basic Example
-
-```bash
-declare -a PARAMS=(
-    "user:USERNAME:Username for login"
-    "server:SERVER_ADDRESS:Server address"
-)
-```
-
-- Creates variables: `$USERNAME`, `$SERVER_ADDRESS`
-- Command-line options: `--user`, `--server`
-
-#### 2. Custom Option Names
-
-```bash
-declare -a PARAMS=(
-    "user:USERNAME:username:Username for login"
-    "server:SERVER_ADDRESS:server-address:Server address"
-)
-```
-
-- Creates variables: `$USERNAME`, `$SERVER_ADDRESS`
-- Command-line options: `--username`, `--server-address`
-
-#### 3. Required Parameters
-
-```bash
-declare -a PARAMS=(
-    "user:USERNAME:username:Username for login:REQUIRE"
-    "pass:PASSWORD:password:Password for authentication:REQUIRE"
-    "server:SERVER_ADDRESS:server-address:Server address"
-)
-```
-
-- Creates variables: `$USERNAME`, `$PASSWORD`, `$SERVER_ADDRESS`
-- Command-line options: `--username`, `--password`, `--server-address`
-- Required parameters: `--username`, `--password`
-
-### Usage Examples
-
-#### Example 1: Basic Parameters
-
-```bash
-declare -a PARAMS=(
-    "name:NAME:Person's name"
-    "age:AGE:Person's age"
-)
-```
-
-Usage:
-
-```bash
-./script.sh --name "John" --age "30"
-# or
-./script.sh "John" "30"
-```
-
-#### Example 2: Custom Option Names
-
-```bash
-declare -a PARAMS=(
-    "user:USERNAME:username:Login username"
-    "pass:PASSWORD:password:Login password"
-)
-```
-
-Usage:
-
-```bash
-./script.sh --username "john" --password "secret"
-# or
-./script.sh "john" "secret"
-```
-
-#### Example 3: Mixed Parameters
-
-```bash
-declare -a PARAMS=(
-    "db:DB_NAME:database:Database name"
-    "host:DB_HOST:Database host"
-    "port:DB_PORT:db-port:Database port"
-)
-```
-
-Usage:
-
-```bash
-./script.sh --database "mydb" --host "localhost" --db-port "5432"
-# or
-./script.sh "mydb" "localhost" "5432"
-# or mixed
-./script.sh --database "mydb" "localhost" --db-port "5432"
-```
-
-## Parameter Validation
-
-To use parameter validation:
-
-1. Define validator functions that return 0 for valid input and non-zero for invalid input
-2. Use these functions in the parameter definition
-3. When validation fails, the user will be prompted to enter a valid value
-
-Example validator functions:
-
-```bash
-# Validate age (must be a number between 1-120)
-validate_age() {
-    local value="$1"
-    
-    # Check if it's a number
-    if ! [[ "$value" =~ ^[0-9]+$ ]]; then
-        echo "Age must be a number" >&2
-        return 1
-    fi
-    
-    # Check range
-    if (( value < 1 || value > 120 )); then
-        echo "Age must be between 1 and 120" >&2
-        return 1
-    fi
-    
-    return 0
-}
-
-# Validate email format
-validate_email() {
-    local value="$1"
-    
-    # Simple email validation
-    if ! [[ "$value" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-        echo "Invalid email format" >&2
-        return 1
-    fi
-    
-    return 0
-}
-```
-
-Usage with validation:
-
-```bash
-declare -a PARAMS=(
-    "name:NAME:Person's name"
-    "age:AGE:age:Person's age (required, 1-120):REQUIRE:validate_age"
-    "email:EMAIL:email-address:Email address (required):REQUIRE:validate_email"
-)
-
-if ! param_handler::simple_handle PARAMS "$@"; then
-    exit 1  # Help was shown or required parameter validation failed
-fi
-```
-
-## Accessing Parameter Values
-
-After using `param_handler::simple_handle`, you can access your parameters in several ways:
-
-### 1. Direct Variable Access
-
-```bash
-# Access variables directly
-if [[ -n "$USERNAME" ]]; then
-    echo "Username is set to: $USERNAME"
+if process_data "$DATA_URL" "$RESULT_FILE"; then
+  msg_info "Final result:"
+  cat "$RESULT_FILE"
 else
-    echo "Username is not set"
+  msg_error "Data processing failed."
+  # Cleanup still happens automatically via EXIT/ERR traps
+  exit 1
 fi
 ```
 
-### 2. Check How Parameters Were Set
+## Tips for Effective Use
 
-```bash
-# Check if server was set by name (--server-address)
-if param_handler::was_set_by_name "server"; then
-    echo "Server was set via --server-address option"
-fi
-
-# Check if server was set by position
-if param_handler::was_set_by_position "server"; then
-    echo "Server was set as a positional parameter"
-fi
-```
-
-### 3. Get Parameter Values Programmatically
-
-```bash
-# Get parameter value
-server_address=$(param_handler::get_param "server")
-echo "Server address: $server_address"
-```
-
-### 4. Print All Parameters
-
-```bash
-# Print all parameters with their values and sources
-param_handler::print_params_extended
-```
-
-## Core Functions Reference
-
-### Simple API (Recommended)
-
-| Function | Description | Sample |
-|----------|-------------|--------|
-| `param_handler::simple_handle [params_array] [args...]` | Process parameters in one step | `param_handler::simple_handle PARAMS "$@"` |
-| `param_handler::get_param [param_name]` | Get parameter value | `value=$(param_handler::get_param "name")` |
-| `param_handler::was_set_by_name [param_name]` | Check if set by name | `if param_handler::was_set_by_name "server"; then echo "Set via --server-address option"; fi` |
-| `param_handler::was_set_by_position [param_name]` | Check if set by position | `if param_handler::was_set_by_position "user"; then echo "Set positionally"; fi` |
-| `param_handler::print_params` | Display parameter values | `param_handler::print_params # Show all param values` |
-| `param_handler::print_help` | Display help message | `param_handler::print_help # Show help message` |
-| `param_handler::export_params [--format type] [--prefix prefix]` | Export parameters | `param_handler::export_params --format json` |
-
-### Display Functions
-
-| Function | Description | Sample |
-|----------|-------------|--------|
-| `param_handler::print_params` | Basic parameter values display | `param_handler::print_params` |
-| `param_handler::print_params_extended` | Display with source information | `param_handler::print_params_extended` |
-| `param_handler::print_summary` | Summary of parameter counts | `param_handler::print_summary` |
-| `param_handler::print_help` | Help message | `param_handler::print_help` |
-
-### Export Functions
-
-| Function | Description | Sample |
-|----------|-------------|--------|
-| `param_handler::export_params --prefix [prefix]` | Export to environment variables | `param_handler::export_params --prefix "APP_"` |
-| `param_handler::export_params --format json` | Export as JSON | `param_handler::export_params --format json` |
-
-## Parameter Type Example
-
-The library uses colored output to indicate parameter sources:
-- **Green**: Parameters set via named options (--option value)
-- **Yellow**: Parameters set via positional arguments
-- **Red**: Unset parameters
-
-```bash
-# Run with parameters by name
-./script.sh --name "John" --age "30"
-
-# Output
-NAME: John (named)
-AGE: 30 (named)
-```
-
-```bash
-# Run with positional parameters
-./script.sh "John" "30"
-
-# Output
-NAME: John (positional)
-AGE: 30 (positional)
-```
-
-## Complete Example with Required Parameters and Validation
-
-```bash
-#!/usr/bin/bash
-source "$(dirname "$0")/sh-globals.sh"
-source "$(dirname "$0")/param_handler.sh"
-
-# Initialize sh-globals
-sh-globals_init "$@"
-
-# Define validator functions
-validate_age() {
-    local value="$1"
-    
-    # Check if it's a number
-    if ! [[ "$value" =~ ^[0-9]+$ ]]; then
-        echo "Age must be a number" >&2
-        return 1
-    fi
-    
-    # Check range
-    if (( value < 1 || value > 120 )); then
-        echo "Age must be between 1 and 120" >&2
-        return 1
-    fi
-    
-    return 0
-}
-
-validate_email() {
-    local value="$1"
-    
-    # Simple email validation
-    if ! [[ "$value" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-        echo "Invalid email format" >&2
-        return 1
-    fi
-    
-    return 0
-}
-
-# Define parameters
-declare -a PARAMS=(
-    # Optional parameter (standard)
-    "name:NAME:Person's name"
-    
-    # Required parameter with validator
-    "age:AGE:age:Person's age (required, 1-120):REQUIRE:validate_age"
-    
-    # Required parameter with custom option name and validator
-    "email:EMAIL:email-address:Email address (required):REQUIRE:validate_email"
-    
-    # Optional parameter with custom option name
-    "location:LOCATION:place:Person's location"
-)
-
-# Process all parameters
-# If validation fails for required parameters, the user will be prompted
-if ! param_handler::simple_handle PARAMS "$@"; then
-    exit 1  # Help was shown or required parameter validation failed
-fi
-
-# Display information
-msg_header "Required Parameters Example"
-
-msg_info "Parameter Values:"
-echo "Name: ${NAME:-not set}"
-echo "Age: ${AGE} (required)"
-echo "Email: ${EMAIL} (required)"
-echo "Location: ${LOCATION:-not set}"
-
-msg_info "Parameter Sources:"
-if param_handler::was_set_by_name "age"; then
-    msg_success "Age was provided via --age option"
-elif param_handler::was_set_by_position "age"; then
-    msg_highlight "Age was provided as a positional parameter"
-else
-    msg_warning "Age was provided via prompt (required parameter)"
-fi
-
-# Display parameter details
-param_handler::print_params_extended
-```
-
-## Tips for Effective Use of param_handler.sh
-
-1. **Organized Definitions**: Keep your parameter definitions organized with clear descriptions
-2. **Use Validation**: Add validation functions for critical parameters to ensure data integrity
-3. **Use Required Flag**: Mark essential parameters as required using the `REQUIRE` keyword
-4. **Descriptive Help**: Write clear descriptions that will be shown in the help message
-5. **Check Parameter Sources**: Use the source checking functions when the source matters
-6. **Export When Needed**: Use export capabilities when passing parameters to other scripts
-7. **User-Friendly Names**: Use the custom option name feature to create user-friendly parameter names
-
----
-
-# Combined Usage Example
-
-This example demonstrates how to use both libraries together:
-
-```bash
-#!/usr/bin/env bash
-
-# Source the libraries
-source "$(dirname "$0")/sh-globals.sh"
-source "$(dirname "$0")/param_handler.sh"
-
-# Initialize sh-globals
-sh-globals_init "$@"
-
-# Initialize logging
-log_init
-
-# Define parameters
-declare -a PARAMS=(
-    ["server:SERVER"]="Server address"
-    ["port:PORT"]="Server port"
-    ["user:USERNAME"]="Username for authentication"
-)
-
-# Process parameters
-if ! param_handler::simple_handle PARAMS "$@"; then
-    exit 0  # Help was shown, exit successfully
-fi
-
-# Log parameter values
-log_info "Server: $SERVER"
-log_info "Port: $PORT"
-log_info "Username: $USERNAME"
-
-# Check dependencies
-if ! check_dependencies curl jq; then
-    log_error "Missing required dependencies"
-    exit 1
-fi
-
-# Create lock to prevent multiple instances
-if ! create_lock; then
-    log_error "Script already running"
-    exit 1
-fi
-
-# Check if server is reachable
-if is_url_reachable "$SERVER" 5; then
-    log_success "Server is reachable"
-else
-    log_error "Cannot reach server $SERVER"
-    exit 1
-fi
-
-# Print summary
-log_success "Script completed successfully"
-```
+1.  **Always Initialize**: Call `sh-globals_init "$@"` right after sourcing the library. This is essential for error handling, flag parsing, and cleanup to work correctly.
+2.  **Prefer `msg_*` over `echo`**: Use `msg_info`, `msg_error`, `msg_success`, etc., for console output. They provide consistent formatting, color-coding, and proper stream handling (e.g., errors to stderr).
+3.  **Use `log_*` for Persistent Logs**: When you need a record of execution (especially for background jobs or debugging), initialize logging with `log_init` and use the `log_*` functions (`log_info`, `log_error`, etc.).
+4.  **Leverage Automatic Error Handling**: Rely on `set -e` (set by default) and the `ERR` trap. Write your code assuming commands succeed. If a command fails, the `error_handler` will automatically log, clean up, and exit. Avoid excessive manual error checking unless specific recovery logic is needed.
+5.  **Use Temporary Resource Functions**: Use `create_temp_file` and `create_temp_dir`. This ensures temporary resources are cleaned up automatically, even if the script fails unexpectedly.
+6.  **Utilize Input Validation**: Use `get_number`, `get_string`, `get_path`, and `get_value` for robust user input, preventing errors caused by invalid formats or values.
+7.  **Check Dependencies Early**: Use `check_dependencies` at the beginning of your script to ensure required tools are available, providing a clear error message if they are not.
+8.  **Use Script Locking**: Employ `create_lock` for scripts that should not run concurrently (e.g., cron jobs modifying the same resource).
 
 ## License
 
-These utilities are provided as open source under the MIT License. Feel free to use and modify as needed.
+This utility (`sh-globals.sh`) is provided as open source under the MIT License. Feel free to use, modify, and distribute as needed. 

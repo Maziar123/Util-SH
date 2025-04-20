@@ -37,7 +37,6 @@ getoptions is a high-performance command-line argument parser that provides:
 ### Parameter Management
 
 - **Simple API** for quick implementation
-- **Advanced API** for fine-grained control
 - Support for both named and positional parameters
 - Automatic parameter source tracking (named vs positional)
 - Parameter count tracking
@@ -57,9 +56,10 @@ getoptions is a high-performance command-line argument parser that provides:
 
 ### Parameter Configuration
 
-- Flexible parameter definition formats:
-  - Simple format: `["internal_name:VARIABLE_NAME"]="Description"`
-  - Custom option format: `["internal_name:VARIABLE_NAME:option_name"]="Description"`
+- Indexed array parameter definition format:
+  - `"internal_name:VARIABLE_NAME:Description"`
+  - `"internal_name:VARIABLE_NAME:option_name:Description"`
+  - `"internal_name:VARIABLE_NAME:option_name:Description:REQUIRE"`
 - Automatic variable creation
 - Parameter description support
 - Help message generation
@@ -109,39 +109,43 @@ For a super minimal example, see [super_minimal_new.sh](Samples/params_example.s
 #!/usr/bin/bash
 source param_handler.sh
 
-# Define parameters in a single associative array (Recommended Way)
-# Format: ["internal_name:VARIABLE_NAME[:option_name]"]="Description"
+# Define parameters in an indexed array
+# Format: "internal_name:VARIABLE_NAME[:option_name]:Description[:REQUIRE][:getter_func]"
 # 
 # internal_name: Used internally by the library (lowercase, no special chars)
 # VARIABLE_NAME: The actual variable name in your script (uppercase)
 # option_name: (Optional) Custom name for the command-line option (lowercase with hyphens)
 # Description: Help text shown in help messages
+# REQUIRE: (Optional) Mark the parameter as required
+# getter_func: (Optional) Function name to validate or prompt for the parameter
 #
 # Example with all components:
-# ["user:USERNAME:username"]="Username for login"
+# "user:USERNAME:username:Username for login:REQUIRE:validate_username"
 #   - internal_name: "user"
 #   - VARIABLE_NAME: "USERNAME"
 #   - option_name: "username"
 #   - Description: "Username for login"
 #   - Creates: $USERNAME variable and --username option
+#   - Required: Yes
+#   - Validator: validate_username function
 #
 # Example without option_name:
-# ["user:USERNAME"]="Username for login"
+# "user:USERNAME:Username for login"
 #   - internal_name: "user"
 #   - VARIABLE_NAME: "USERNAME"
 #   - option_name: (uses internal_name "user")
 #   - Description: "Username for login"
 #   - Creates: $USERNAME variable and --user option
 #
-declare -A PARAMS=(
-    # Basic format: internal_name:VARIABLE_NAME
-    ["name:NAME"]="Person's name"  # Creates $NAME and --name option
+declare -a PARAMS=(
+    # Basic format: internal_name:VARIABLE_NAME:Description
+    "name:NAME:Person's name"
     
-    # Basic format: internal_name:VARIABLE_NAME
-    ["age:AGE"]="Person's age"     # Creates $AGE and --age option
+    # Basic format: internal_name:VARIABLE_NAME:Description
+    "age:AGE:Person's age"
     
-    # Extended format: internal_name:VARIABLE_NAME:option_name
-    ["location:LOCATION:place"]="Person's location"  # Creates $LOCATION and --place option
+    # Extended format: internal_name:VARIABLE_NAME:option_name:Description
+    "location:LOCATION:place:Person's location"
 )
 
 # Process all parameters in one step
@@ -160,36 +164,40 @@ The `PARAMS` array uses a specific format to define parameters. Here's a detaile
 ### Basic Format
 
 ```bash
-declare -A PARAMS=(
-    ["internal_name:VARIABLE_NAME"]="Description"
+declare -a PARAMS=(
+    "internal_name:VARIABLE_NAME:Description"
 )
 ```
 
 ### Extended Format
 
 ```bash
-declare -A PARAMS=(
-    ["internal_name:VARIABLE_NAME:option_name"]="Description"
+declare -a PARAMS=(
+    "internal_name:VARIABLE_NAME:option_name:Description[:REQUIRE][:getter_func]"
 )
 ```
 
 ### Format Components
 
-1. **Key Format**: `"internal_name:VARIABLE_NAME[:option_name]"`
+1. **Core Components** (required):
    - `internal_name`: Used internally by the library (e.g., "user", "server")
    - `VARIABLE_NAME`: The actual variable name in your script (e.g., "USERNAME", "SERVER_ADDRESS")
-   - `option_name`: (Optional) Custom name for the command-line option
 
-2. **Value**: The description shown in help messages
+2. **Optional Components**:
+   - `option_name`: Custom name for the command-line option (default: internal_name)
+   - `REQUIRE`: Mark the parameter as required
+   - `getter_func`: Function name to validate or prompt for the parameter
+
+3. **Description**: Help text displayed in the help message
 
 ### Examples
 
 #### 1. Basic Example
 
 ```bash
-declare -A PARAMS=(
-    ["user:USERNAME"]="Username for login"
-    ["server:SERVER_ADDRESS"]="Server address"
+declare -a PARAMS=(
+    "user:USERNAME:Username for login"
+    "server:SERVER_ADDRESS:Server address"
 )
 ```
 
@@ -199,36 +207,37 @@ declare -A PARAMS=(
 #### 2. Custom Option Names
 
 ```bash
-declare -A PARAMS=(
-    ["user:USERNAME:username"]="Username for login"
-    ["server:SERVER_ADDRESS:server-address"]="Server address"
+declare -a PARAMS=(
+    "user:USERNAME:username:Username for login"
+    "server:SERVER_ADDRESS:server-address:Server address"
 )
 ```
 
 - Creates variables: `$USERNAME`, `$SERVER_ADDRESS`
 - Command-line options: `--username`, `--server-address`
 
-#### 3. Mixed Format
+#### 3. Required Parameters
 
 ```bash
-declare -A PARAMS=(
-    ["user:USERNAME"]="Username for login"
-    ["pass:PASSWORD:password"]="Password for authentication"
-    ["server:SERVER_ADDRESS:server-address"]="Server address"
+declare -a PARAMS=(
+    "user:USERNAME:username:Username for login:REQUIRE"
+    "pass:PASSWORD:password:Password for authentication:REQUIRE"
+    "server:SERVER_ADDRESS:server-address:Server address"
 )
 ```
 
 - Creates variables: `$USERNAME`, `$PASSWORD`, `$SERVER_ADDRESS`
-- Command-line options: `--user`, `--password`, `--server-address`
+- Command-line options: `--username`, `--password`, `--server-address`
+- Required parameters: `--username`, `--password`
 
 ### Usage Examples
 
 #### Example 1: Basic Parameters
 
 ```bash
-declare -A PARAMS=(
-    ["name:NAME"]="Person's name"
-    ["age:AGE"]="Person's age"
+declare -a PARAMS=(
+    "name:NAME:Person's name"
+    "age:AGE:Person's age"
 )
 ```
 
@@ -243,9 +252,9 @@ Usage:
 #### Example 2: Custom Option Names
 
 ```bash
-declare -A PARAMS=(
-    ["user:USERNAME:username"]="Login username"
-    ["pass:PASSWORD:password"]="Login password"
+declare -a PARAMS=(
+    "user:USERNAME:username:Login username"
+    "pass:PASSWORD:password:Login password"
 )
 ```
 
@@ -260,10 +269,10 @@ Usage:
 #### Example 3: Mixed Parameters
 
 ```bash
-declare -A PARAMS=(
-    ["db:DB_NAME:database"]="Database name"
-    ["host:DB_HOST"]="Database host"
-    ["port:DB_PORT:db-port"]="Database port"
+declare -a PARAMS=(
+    "db:DB_NAME:database:Database name"
+    "host:DB_HOST:Database host"
+    "port:DB_PORT:db-port:Database port"
 )
 ```
 
@@ -283,7 +292,7 @@ Usage:
 2. Variable names should be uppercase by convention
 3. Option names should be lowercase with hyphens
 4. Internal names should be lowercase without special characters
-5. All parameters are optional unless specified otherwise
+5. All parameters are optional unless specified with REQUIRE
 
 ## 🔍 Accessing Parameter Values
 
@@ -295,10 +304,10 @@ The simplest way to access parameters is using the variable names you defined:
 
 ```bash
 # Define parameters
-declare -A PARAMS=(
-    ["user:USERNAME"]="Username for login"
-    ["pass:PASSWORD:password"]="Password for authentication"
-    ["server:SERVER_ADDRESS:server-address"]="Server address"
+declare -a PARAMS=(
+    "user:USERNAME:Username for login"
+    "pass:PASSWORD:password:Password for authentication"
+    "server:SERVER_ADDRESS:server-address:Server address"
 )
 
 # Process parameters
@@ -361,10 +370,10 @@ param_handler::print_params_extended
 source param_handler.sh
 
 # Define parameters
-declare -A PARAMS=(
-    ["user:USERNAME"]="Username for login"
-    ["pass:PASSWORD:password"]="Password for authentication"
-    ["server:SERVER_ADDRESS:server-address"]="Server address"
+declare -a PARAMS=(
+    "user:USERNAME:Username for login"
+    "pass:PASSWORD:password:Password for authentication"
+    "server:SERVER_ADDRESS:server-address:Server address"
 )
 
 # Process parameters
@@ -412,161 +421,21 @@ param_handler::print_params_extended
 ./myscript.sh --help
 ```
 
-## 📘 Core Functions Reference
-
-### Simple API (Recommended)
-
-The recommended way to use the library is through the simple API:
-
-```bash
-# Define parameters in a single associative array
-declare -A PARAMS=(
-    ["name:NAME"]="Person's name"
-    ["age:AGE"]="Person's age"
-)
-
-# Process all parameters in one step
-param_handler::simple_handle PARAMS "$@"
-
-# Get a specific parameter value
-value=$(param_handler::get_param "name")
-
-# Print parameter values
-param_handler::print_params
-
-# Export parameters (formats: export, json)
-param_handler::export_params --format json
-param_handler::export_params --prefix "APP_"
-
-# Print help message
-param_handler::print_help
-```
-
-### Advanced API (Legacy)
-
-> ⚠️ **Note**: The following functions are part of the legacy API. While they still work, it's recommended to use the simple API with `param_handler::simple_handle` instead.
-
-```bash
-# Initialize the parameter handler
-param_handler::init
-
-# Register parameters individually (Legacy way)
-param_handler::register_param "param_name" "VAR_NAME" "option_name" "Description"
-
-# Generate parser definition
-param_handler::generate_parser_definition "my_parser"
-
-# Process parameters
-param_handler::process "$@"
-
-# Check parameter source
-if param_handler::was_set_by_name "param_name"; then
-    echo "Parameter was set by name (--option)"
-fi
-
-if param_handler::was_set_by_position "param_name"; then
-    echo "Parameter was set by position"
-fi
-
-# Get parameter counts
-named_count=$(param_handler::get_named_count)
-positional_count=$(param_handler::get_positional_count)
-```
-
-### Display Functions
-
-```bash
-# Basic parameter values display
-param_handler::print_params
-
-# Extended display with color-coded source information
-param_handler::print_params_extended
-
-# Summary of parameter counts
-param_handler::print_summary
-
-# Help message
-param_handler::print_help
-```
-
-### Export Functions
-
-```bash
-# Export to environment variables with an optional prefix
-param_handler::export_params --prefix "MY_APP_"
-
-# Export as JSON
-param_handler::export_params --format json
-```
-
-## 📝 Example Usage
-
-For a comprehensive example with multiple test cases, see [param_handler_usage.sh](Samples/param_handler_usage.sh). Here's a basic example using the recommended approach:
-
-```bash
-#!/usr/bin/bash
-source param_handler.sh
-
-# Define parameters (Recommended Way)
-declare -A PARAMS=(
-    ["user:USERNAME"]="Username for login"
-    ["pass:PASSWORD:password"]="Password for authentication"
-    ["server:SERVER_ADDRESS:server-address"]="Server address"
-)
-
-# Process parameters
-param_handler::simple_handle PARAMS "$@"
-
-# Use the parameters
-echo "Connecting to $SERVER_ADDRESS as $USERNAME..."
-```
-
-### Legacy Example (Not Recommended)
-
-```bash
-#!/usr/bin/bash
-source param_handler.sh
-
-# Initialize (Legacy way)
-param_handler::init
-
-# Register parameters individually (Legacy way)
-param_handler::register_param "user" "USERNAME" "user" "Username for login"
-param_handler::register_param "pass" "PASSWORD" "password" "Password for authentication" 
-param_handler::register_param "server" "SERVER_ADDRESS" "server-address" "Server address"
-
-# Process parameters with help handling
-if ! param_handler::process --handle-help "$@"; then
-    exit 0  # Help was displayed
-fi
-
-# Check how parameters were set
-if param_handler::was_set_by_name "user"; then
-    echo "Username was provided via --user option"
-elif param_handler::was_set_by_position "user"; then
-    echo "Username was provided as a positional parameter"
-else
-    echo "Username was not provided"
-fi
-
-# Print parameter values with sources
-param_handler::print_params_extended
-
-# Export parameters to environment variables with a prefix
-param_handler::export_params --prefix "APP_"
-```
-
 ## 🔍 Parameter Configuration
 
 When defining parameters, you can use these formats:
 
-1. **Simple format**: `["internal_name:VARIABLE_NAME"]="Description"`
+1. **Simple format**: `"internal_name:VARIABLE_NAME:Description"`
    - The option name will be the same as the internal name
-   - Example: `["user:USERNAME"]="User name"` creates a `--user` option
+   - Example: `"user:USERNAME:User name"` creates a `--user` option
 
-2. **Custom option format**: `["internal_name:VARIABLE_NAME:option_name"]="Description"`
+2. **Custom option format**: `"internal_name:VARIABLE_NAME:option_name:Description"`
    - Specifies a custom option name different from the internal name
-   - Example: `["user:USERNAME:username"]="User name"` creates a `--username` option
+   - Example: `"user:USERNAME:username:User name"` creates a `--username` option
+
+3. **Required parameter format**: `"internal_name:VARIABLE_NAME:option_name:Description:REQUIRE"`
+   - Marks the parameter as required
+   - Example: `"user:USERNAME:username:User name:REQUIRE"` creates a required `--username` option
 
 The parameters are processed in the order they are defined, which is important for positional parameter handling.
 
@@ -598,6 +467,31 @@ param_handler::export_params --prefix "MY_APP_"
 
 # Export as JSON
 param_handler::export_params --format json
+```
+
+## 🎭 Parameter Type Example
+
+The library uses colored output to indicate parameter sources:
+- **Green**: Parameters set via named options (--option value)
+- **Yellow**: Parameters set via positional arguments
+- **Red**: Unset parameters
+
+```bash
+# Run with parameters by name
+./script.sh --name "John" --age "30"
+
+# Output
+NAME: John (named)
+AGE: 30 (named)
+```
+
+```bash
+# Run with positional parameters
+./script.sh "John" "30"
+
+# Output
+NAME: John (positional)
+AGE: 30 (positional)
 ```
 
 ## 📚 Additional Resources
