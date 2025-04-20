@@ -446,4 +446,111 @@ Describe "param_handler.sh ordered array implementation"
       End
     End
   End
+
+  Context "handling edge cases"
+    It "handles no parameters correctly"
+      When call param_handler::simple_handle STANDARD_PARAMS
+      The variable VIRT_GRAPHIC should equal ""
+      The variable VIRT_VIDEO should equal ""
+      The variable RENDER should equal ""
+      The variable GPU_VENDOR should equal ""
+      The status should be success
+      # Verify counts in separate tests
+    End
+
+    It "counts 0 named parameters when none are provided"
+      param_handler::simple_handle STANDARD_PARAMS
+      When call param_handler::get_named_count
+      The output should equal "0"
+    End
+
+    It "counts 0 positional parameters when none are provided"
+      param_handler::simple_handle STANDARD_PARAMS
+      When call param_handler::get_positional_count
+      The output should equal "0"
+    End
+  End
+  
+  Context "specific mixed parameter combinations"
+    It "handles mixed parameters like Test 13 correctly"
+      When call param_handler::simple_handle STANDARD_PARAMS --virt-graphic "spice" "qxl" "software" --gpu "nvidia"
+      The variable VIRT_GRAPHIC should equal "spice"
+      The variable VIRT_VIDEO should equal "qxl"
+      The variable RENDER should equal "software"
+      The variable GPU_VENDOR should equal "nvidia"
+      The status should be success
+      # Verify counts in separate tests
+    End
+
+    It "counts 2 named parameters for Test 13 combination"
+      param_handler::simple_handle STANDARD_PARAMS --virt-graphic "spice" "qxl" "software" --gpu "nvidia"
+      When call param_handler::get_named_count
+      The output should equal "2"
+    End
+
+    It "counts 2 positional parameters for Test 13 combination"
+      param_handler::simple_handle STANDARD_PARAMS --virt-graphic "spice" "qxl" "software" --gpu "nvidia"
+      When call param_handler::get_positional_count
+      The output should equal "2"
+    End
+  End
+
+  Context "auxiliary functions"
+    Describe "param_handler::get_param"
+      It "retrieves the value of the first set parameter (graphic)"
+        param_handler::simple_handle STANDARD_PARAMS --virt-graphic "spice" "qxl" --render "sw"
+        When call param_handler::get_param "graphic"
+        The output should equal "spice"
+      End
+
+      It "retrieves the value of the second set parameter (video)"
+        param_handler::simple_handle STANDARD_PARAMS --virt-graphic "spice" "qxl" --render "sw"
+        When call param_handler::get_param "video"
+        The output should equal "qxl"
+      End
+
+      It "retrieves the value of the third set parameter (render)"
+        param_handler::simple_handle STANDARD_PARAMS --virt-graphic "spice" "qxl" --render "sw"
+        When call param_handler::get_param "render"
+        The output should equal "sw"
+      End
+
+      It "retrieves an empty value for an unset parameter (gpu)"
+        param_handler::simple_handle STANDARD_PARAMS --virt-graphic "spice" "qxl" --render "sw"
+        When call param_handler::get_param "gpu"
+        The output should equal ""
+      End
+    End
+
+    Describe "param_handler::export_params"
+      It "exports parameters with a prefix"
+        param_handler::simple_handle STANDARD_PARAMS --virt-graphic "spice" --gpu "nvidia"
+        # Call export, check status, stdout, and env vars
+        When call param_handler::export_params --prefix "TEST_"
+        The status should be success 
+        # Use match to ignore potential color codes
+        The stdout should match pattern "*'Exporting parameters:'*"
+        # Check environment variables (ShellSpec doesn't have direct env var check)
+        # Instead, we check the variable directly in the current shell scope
+        The variable TEST_VIRT_GRAPHIC should equal "spice"
+        The variable TEST_GPU_VENDOR should equal "nvidia"
+        # Check that unset variables are not exported / are empty or unset
+        # Removed check for TEST_VIRT_VIDEO as it might be unset vs empty
+      End
+      
+      It "exports parameters as JSON"
+        param_handler::simple_handle STANDARD_PARAMS --virt-graphic "spice" --virt-video "qxl"
+        When call param_handler::export_params --format json
+        The status should be success
+        # Check if the output includes expected JSON parts using 'match pattern'
+        The output should match pattern '*"graphic": *"spice"' # Allow whitespace
+        The output should match pattern '*"video": *"qxl"'
+        The output should match pattern '*"render": *""'
+        The output should match pattern '*"gpu": *""'
+        # Check for braces inclusion using match pattern
+        The output should match pattern '*{' # Match opening brace anywhere
+        The output should match pattern '*}' # Match closing brace anywhere
+      End
+    End
+  End
 End 
