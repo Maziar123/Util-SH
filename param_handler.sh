@@ -561,6 +561,140 @@ param_handler::simple_handle() {
     return 0
 }
 
+# Ordered parameter handling function that ensures consistent parameter order
+# Usage: declare -a ORDER=("name:NAME:Person's name" "age:AGE:age:Person's age:REQUIRE:validate_age")
+#        param_handler::ordered_handle ORDER "$@"
+param_handler::ordered_handle() {
+    local param_array_name="$1"
+    shift
+    
+    # Initialize
+    param_handler-init
+    
+    # Get the ordered array with parameter definitions
+    local -n param_array="$param_array_name"
+    
+    # Register parameters from the ordered array - preserves exact ordering
+    for item in "${param_array[@]}"; do
+        local internal_name=""
+        local var_name=""
+        local option_name=""
+        local description=""
+        local required=""
+        local getter_func=""
+        
+        # Check if item uses the associative array format ["key"]="value"
+        if [[ "$item" =~ ^\[(.*)\]=\"(.*)\"$ ]]; then
+            # Extract key and value from associative array format
+            local key="${BASH_REMATCH[1]}"
+            description="${BASH_REMATCH[2]}"
+            
+            # Split key by colon
+            IFS=':' read -ra parts <<< "$key"
+            
+            # Extract the parts based on how many were provided
+            internal_name="${parts[0]}"
+            var_name="${parts[1]}"
+            
+            if [[ ${#parts[@]} -gt 2 ]]; then
+                option_name="${parts[2]}"
+            fi
+            
+            if [[ ${#parts[@]} -gt 3 ]]; then
+                required="${parts[3]}"
+            fi
+            
+            if [[ ${#parts[@]} -gt 4 ]]; then
+                getter_func="${parts[4]}"
+            fi
+        else
+            # Split by colon into array parts (regular format)
+            IFS=':' read -ra parts <<< "$item"
+            
+            # Check if we have the minimum required parts
+            if [[ ${#parts[@]} -lt 3 ]]; then
+                echo -e "${RED}Error: Parameter definition must have at least internal_name:VAR_NAME:description${NC}" >&2
+                continue
+            fi
+            
+            # Extract the parts based on how many were provided
+            internal_name="${parts[0]}"
+            var_name="${parts[1]}"
+            
+            # Handle different formats
+            case ${#parts[@]} in
+                3) # Can be either of these formats:
+                   # 1. internal_name:VAR_NAME:description
+                   # 2. internal_name:VAR_NAME:option_name (with empty description)
+                   if [[ "${parts[2]}" == *graphic* || "${parts[2]}" == *video* || "${parts[2]}" == *render* || "${parts[2]}" == *gpu* ]]; then
+                       # Likely an option name
+                       option_name="${parts[2]}"
+                       description=""
+                   else
+                       # Likely a description
+                       option_name="${internal_name}"
+                       description="${parts[2]}"
+                   fi
+                   ;;
+                4) # internal_name:VAR_NAME:option_name:description
+                   option_name="${parts[2]}"
+                   description="${parts[3]}"
+                   ;;
+                5) # internal_name:VAR_NAME:option_name:description:REQUIRE
+                   option_name="${parts[2]}"
+                   description="${parts[3]}"
+                   required="${parts[4]}"
+                   ;;
+                6) # internal_name:VAR_NAME:option_name:description:REQUIRE:getter_func
+                   option_name="${parts[2]}"
+                   description="${parts[3]}"
+                   required="${parts[4]}"
+                   getter_func="${parts[5]}"
+                   ;;
+                *)
+                   echo -e "${YELLOW}Warning: Unexpected format for parameter definition: $item${NC}" >&2
+                   option_name="${parts[2]}"
+                   if [[ ${#parts[@]} -gt 3 ]]; then description="${parts[3]}"; fi
+                   if [[ ${#parts[@]} -gt 4 ]]; then required="${parts[4]}"; fi
+                   if [[ ${#parts[@]} -gt 5 ]]; then getter_func="${parts[5]}"; fi
+                   ;;
+            esac
+        fi
+        
+        # Apply defaults
+        if [[ -z "$option_name" ]]; then
+            option_name="$internal_name"
+        fi
+        
+        # Create the variable if it doesn't exist
+        if ! declare -p "$var_name" &>/dev/null; then
+            declare -g "$var_name"=""
+        fi
+        
+        # Register the parameter
+        param_handler::register_param "$internal_name" "$var_name" "$option_name" "$description" "$required" "$getter_func"
+        
+        # Debug output if enabled
+        if [[ "$DEBUG_MSG" -eq 1 ]]; then
+            echo "Registered parameter: $internal_name, var: $var_name, opt: $option_name, desc: $description" >&2
+        fi
+    done
+    
+    # Process the parameters with help handling
+    local result
+    param_handler::process --handle-help "$@"
+    result=$?
+    
+    if [[ $result -eq 1 ]]; then
+        return 1  # Help was displayed
+    elif [[ $result -eq 2 ]]; then
+        echo -e "${RED}Error: Required parameters missing${NC}" >&2
+        return 2  # Required parameters missing
+    fi
+    
+    return 0
+}
+
 # Export parameters to environment variables or other formats
 # Usage: param_handler::export_params [--prefix PREFIX] [--format FORMAT]
 param_handler::export_params() {
