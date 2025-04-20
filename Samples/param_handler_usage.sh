@@ -164,4 +164,146 @@ run_test 11 "First parameter positional, rest named" "spice" --virt-video "qxl" 
 run_test 12 "Mixed parameter order 1" "spice" --virt-video "qxl" "software" --gpu "nvidia"
 run_test 13 "Mixed parameter order 2" --virt-graphic "spice" "qxl" "software" --gpu "nvidia"
 
+msg_header "Testing with different parameter counts"
+
+# Test with a single parameter
+run_test_single() {
+    local test_num="$1"
+    local description="$2"
+    shift 2
+    local cmd_args=("$@")
+    
+    msg_section "TEST ${test_num}: ${description}" 60
+    msg_info "Command: $0 ${cmd_args[*]}"
+    
+    # Reset variables
+    SINGLE_PARAM=""
+    
+    # Define 1 parameter in the array
+    declare -a SINGLE_PARAMS=(
+        "param:SINGLE_PARAM:single-param:Single parameter test"
+    )
+    
+    # Display parameter order
+    local param_order=""
+    for i in "${!SINGLE_PARAMS[@]}"; do
+        local param_item="${SINGLE_PARAMS[$i]}"
+        local param_parts
+        IFS=':' read -ra param_parts <<< "$param_item"
+        param_order+="$(($i + 1)). ${param_parts[0]} (${param_parts[1]})  "
+    done
+    msg_info "Parameter order: ${param_order}"
+    
+    # Process parameters
+    param_handler::simple_handle SINGLE_PARAMS "${cmd_args[@]}"
+    
+    msg_section "Parameter Values" 40
+    param_handler::print_params_extended
+    
+    msg_section "Parameter Counts" 40
+    msg_info "Named parameters: $(param_handler::get_named_count)"
+    msg_info "Positional parameters: $(param_handler::get_positional_count)"
+    msg_info "Total parameters: $(($(param_handler::get_named_count) + $(param_handler::get_positional_count)))"
+}
+
+# Test with two parameters
+run_test_two() {
+    local test_num="$1"
+    local description="$2"
+    shift 2
+    local cmd_args=("$@")
+    
+    msg_section "TEST ${test_num}: ${description}" 60
+    msg_info "Command: $0 ${cmd_args[*]}"
+    
+    # Reset variables
+    FIRST_PARAM="" SECOND_PARAM=""
+    
+    # Define 2 parameters in the array
+    declare -a TWO_PARAMS=(
+        "first:FIRST_PARAM:param1:First parameter"
+        "second:SECOND_PARAM:param2:Second parameter"
+    )
+    
+    # Display parameter order
+    local param_order=""
+    for i in "${!TWO_PARAMS[@]}"; do
+        local param_item="${TWO_PARAMS[$i]}"
+        local param_parts
+        IFS=':' read -ra param_parts <<< "$param_item"
+        param_order+="$(($i + 1)). ${param_parts[0]} (${param_parts[1]})  "
+    done
+    msg_info "Parameter order: ${param_order}"
+    
+    # Process parameters
+    param_handler::simple_handle TWO_PARAMS "${cmd_args[@]}"
+    
+    msg_section "Parameter Values" 40
+    param_handler::print_params_extended
+    
+    msg_section "Parameter Counts" 40
+    msg_info "Named parameters: $(param_handler::get_named_count)"
+    msg_info "Positional parameters: $(param_handler::get_positional_count)"
+    msg_info "Total parameters: $(($(param_handler::get_named_count) + $(param_handler::get_positional_count)))"
+}
+
+# Test with 8 parameters
+run_test_many() {
+    local test_num="$1"
+    local description="$2"
+    shift 2
+    local cmd_args=("$@")
+    
+    msg_section "TEST ${test_num}: ${description}" 60
+    msg_info "Command: $0 ${cmd_args[*]}"
+    
+    # Reset variables
+    PARAM1="" PARAM2="" PARAM3="" PARAM4="" PARAM5="" PARAM6="" PARAM7="" PARAM8=""
+    
+    # Define 8 parameters in the array
+    declare -a MANY_PARAMS=(
+        "one:PARAM1:param1:First parameter"
+        "two:PARAM2:param2:Second parameter"
+        "three:PARAM3:param3:Third parameter"
+        "four:PARAM4:param4:Fourth parameter"
+        "five:PARAM5:param5:Fifth parameter"
+        "six:PARAM6:param6:Sixth parameter"
+        "seven:PARAM7:param7:Seventh parameter"
+        "eight:PARAM8:param8:Eighth parameter"
+    )
+    
+    # Display parameter order
+    local param_order=""
+    for i in "${!MANY_PARAMS[@]}"; do
+        local param_item="${MANY_PARAMS[$i]}"
+        local param_parts
+        IFS=':' read -ra param_parts <<< "$param_item"
+        param_order+="$(($i + 1)). ${param_parts[0]} (${param_parts[1]})  "
+    done
+    msg_info "Parameter order: ${param_order}"
+    
+    # Process parameters
+    param_handler::simple_handle MANY_PARAMS "${cmd_args[@]}"
+    
+    msg_section "Parameter Values" 40
+    param_handler::print_params_extended
+    
+    msg_section "Parameter Counts" 40
+    msg_info "Named parameters: $(param_handler::get_named_count)"
+    msg_info "Positional parameters: $(param_handler::get_positional_count)"
+    msg_info "Total parameters: $(($(param_handler::get_named_count) + $(param_handler::get_positional_count)))"
+}
+
+# Run the tests with different parameter counts
+run_test_single 14 "Single parameter" --single-param "value1"
+run_test_single 15 "Single parameter (positional)" "positional_value"
+
+run_test_two 16 "Two parameters" --param1 "first_value" --param2 "second_value"
+run_test_two 17 "Two parameters (positional)" "first_positional" "second_positional"
+run_test_two 18 "Two parameters (mixed)" --param1 "named_value" "positional_value"
+
+run_test_many 19 "Eight parameters (all named)" --param1 "v1" --param2 "v2" --param3 "v3" --param4 "v4" --param5 "v5" --param6 "v6" --param7 "v7" --param8 "v8"
+run_test_many 20 "Eight parameters (all positional)" "p1" "p2" "p3" "p4" "p5" "p6" "p7" "p8"
+run_test_many 21 "Eight parameters (mixed)" --param1 "v1" "p2" --param3 "v3" "p4" --param5 "v5" "p6" --param7 "v7" "p8"
+
 exit 0
