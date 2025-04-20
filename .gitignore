@@ -1,0 +1,9 @@
+# Exclude archive and documentation folders
+zArchive/
+Doc/
+
+# Common exclusions
+.DS_Store
+*~
+*.swp
+*.swo 
