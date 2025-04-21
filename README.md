@@ -1393,7 +1393,7 @@ main
 
 # Combined Usage Example
 
-This example demonstrates how to use both libraries together:
+This example demonstrates how to use both `sh-globals.sh` and `param_handler.sh` together in a practical script:
 
 ```bash
 #!/usr/bin/env bash
@@ -1402,52 +1402,197 @@ This example demonstrates how to use both libraries together:
 source "$(dirname "$0")/sh-globals.sh"
 source "$(dirname "$0")/param_handler.sh"
 
-# Initialize sh-globals
+# Initialize sh-globals with script arguments
 sh-globals_init "$@"
 
-# Initialize logging
-log_init
+# Set up logging to both console and file
+log_init "$(get_script_name).log"
+log_info "Starting script: $(get_script_name)"
 
-# Define parameters
+# Print a header for the script
+msg_header "FILE PROCESSING UTILITY"
+msg_section "Environment Setup" 60 "-"
+
+# Check OS and system information
+os_type=$(get_os)
+log_info "Operating system: $os_type"
+log_info "Hostname: $(get_hostname)"
+log_info "Current user: $(get_current_user)"
+
+# Check dependencies
+msg_info "Checking dependencies..."
+if ! check_dependencies jq curl grep; then
+  msg_error "Missing required dependencies. Please install them and try again."
+  exit 1
+fi
+
+# Define parameters with param_handler
 declare -a PARAMS=(
-    ["server:SERVER"]="Server address"
-    ["port:PORT"]="Server port"
-    ["user:USERNAME"]="Username for authentication"
+  "input:INPUT_FILE:input-file:Input file to process:REQUIRE"
+  "output:OUTPUT_FILE:output-file:Output file (default: output.json)"
+  "format:FORMAT:Format for output (json|csv|txt):REQUIRE"
+  "verbose:VERBOSE_FLAG:Enable verbose output"
 )
 
 # Process parameters
 if ! param_handler::simple_handle PARAMS "$@"; then
-    exit 0  # Help was shown, exit successfully
+  exit 1  # Help was shown or parameter validation failed
 fi
 
-# Log parameter values
-log_info "Server: $SERVER"
-log_info "Port: $PORT"
-log_info "Username: $USERNAME"
+# Set default output file if not provided
+OUTPUT_FILE="${OUTPUT_FILE:-output.json}"
 
-# Check dependencies
-if ! check_dependencies curl jq; then
-    log_error "Missing required dependencies"
-    exit 1
-fi
-
-# Create lock to prevent multiple instances
+# Create a lock to prevent multiple instances
 if ! create_lock; then
-    log_error "Script already running"
-    exit 1
+  log_error "Another instance is already running."
+  exit 1
 fi
 
-# Check if server is reachable
-if is_url_reachable "$SERVER" 5; then
-    log_success "Server is reachable"
-else
-    log_error "Cannot reach server $SERVER"
-    exit 1
+# Validate parameters
+if ! file_exists "$INPUT_FILE"; then
+  msg_error "Input file does not exist: $INPUT_FILE"
+  exit 1
 fi
 
-# Print summary
+# Safe directory creation for output
+output_dir=$(dirname "$OUTPUT_FILE")
+safe_mkdir "$output_dir"
+
+# String operations example
+file_basename=$(get_file_basename "$INPUT_FILE")
+file_ext=$(get_file_extension "$INPUT_FILE") 
+msg_info "Processing file: $file_basename.$file_ext"
+
+# Create a temporary working directory
+temp_dir=$(create_temp_dir "process_XXXX")
+log_debug "Created temporary directory: $temp_dir"
+
+# Define a function to handle errors
+cleanup() {
+  log_info "Cleaning up resources..."
+  # cleanup_temp handled automatically by sh-globals_init
+}
+
+# Process the file based on format
+process_file() {
+  local src="$1"
+  local dst="$2"
+  local format="$3"
+  
+  msg_step 1 3 "Reading input file"
+  
+  # Count lines in the file
+  local line_count
+  line_count=$(wc -l < "$src")
+  msg_info "Input file has $line_count lines"
+  
+  # String manipulation example
+  local uppercase_format
+  uppercase_format=$(str_to_upper "$format")
+  msg_highlight "Converting to $uppercase_format format"
+  
+  msg_step 2 3 "Processing data"
+  
+  # Simple processing based on format
+  case "$format" in
+    json)
+      # Example transformation
+      if [[ "$file_ext" == "csv" ]]; then
+        # Convert CSV to JSON (simplified example)
+        local temp_file="$temp_dir/temp.json"
+        echo "[" > "$temp_file"
+        while IFS=, read -r name value; do
+          echo "  {\"name\": \"$name\", \"value\": \"$value\"}," >> "$temp_file"
+        done < "$src"
+        # Remove last comma and close array
+        sed '$ s/,$//' "$temp_file" > "$temp_file.fixed"
+        safe_copy "$temp_file.fixed" "$dst"
+      fi
+      ;;
+    csv)
+      # Another transformation example
+      local timestamp=$(get_timestamp)
+      echo "name,value,timestamp" > "$dst"
+      while read -r line; do
+        echo "$line,$timestamp" >> "$dst"
+      done < "$src"
+      ;;
+    txt)
+      # Simple copy with timestamp prefix
+      echo "# Processed on $(format_date)" > "$dst"
+      cat "$src" >> "$dst"
+      ;;
+    *)
+      msg_error "Unsupported format: $format"
+      return 1
+      ;;
+  esac
+  
+  msg_step 3 3 "Writing output file"
+  
+  if file_exists "$dst"; then
+    local size=$(file_size "$dst")
+    local human_size=$(format_bytes "$size")
+    msg_success "Output file created: $dst ($human_size)"
+    return 0
+  else
+    msg_error "Failed to create output file"
+    return 1
+  fi
+}
+
+# Main execution with error handling
+(
+  msg_section "Processing" 60 "-"
+  if process_file "$INPUT_FILE" "$OUTPUT_FILE" "$FORMAT"; then
+    msg_success "Processing completed successfully"
+    
+    # Print parameter summary
+    msg_section "Parameters" 60 "-"
+    param_handler::print_params_extended
+    
+    # Calculate elapsed time
+    start_time="$SECONDS"
+    # ... (simulate some work)
+    sleep 2
+    elapsed=$((SECONDS - start_time))
+    log_info "Processing took $elapsed seconds"
+    
+    # Ask for user confirmation to open the file
+    if confirm "Open the output file?" "n"; then
+      case "$os_type" in
+        linux)  xdg-open "$OUTPUT_FILE" ;;
+        mac)    open "$OUTPUT_FILE" ;;
+        *)      msg_warning "Cannot open file on this platform" ;;
+      esac
+    fi
+  else
+    msg_error "Processing failed"
+    exit 1
+  fi
+) || {
+  # Error handler
+  log_error "An error occurred during processing"
+  print_stack_trace
+  cleanup
+  exit 1
+}
+
+# Script cleanup and summary
 log_success "Script completed successfully"
+exit 0
 ```
+
+This example demonstrates:
+
+1. **Initialization**: Setting up both libraries and initializing with script arguments
+2. **Logging**: Using both log functions and colorized message display
+3. **Parameter Handling**: Using param_handler to process command line arguments
+4. **File Operations**: Safe file manipulation with validation and temporary resources
+5. **Error Handling**: Proper error trapping and cleanup
+6. **String Manipulation**: Functions for working with text and paths
+7. **User Interaction**: Confirmations and formatted output
+8. **System Information**: Detecting OS type and adapting functionality
 
 ## License
 
