@@ -35,6 +35,10 @@ else
     exit 1
 fi
 
+# Enable debug mode for param_handler
+# Set to 1 to see detailed debug messages during parameter processing
+DEBUG_MSG=1
+
 # Define validator functions
 # These functions should return 0 for valid input, non-zero for invalid
 
@@ -70,21 +74,20 @@ validate_email() {
     return 0
 }
 
-# Define parameters in a single associative array
-# Format: ["internal_name:VARIABLE_NAME:option_name:REQUIRE:validator_func"]="Description"
-# shellcheck disable=SC2034
-declare -A PARAMS=(
+# Define parameters in a single array
+# Format: "internal_name:VARIABLE_NAME:option_name:REQUIRE:validator_func"
+declare -a PARAMS=(
     # Optional parameter (standard)
-    ["name:NAME"]="Person's name"
+    "name:NAME::Person's name"
     
     # Required parameter with validator (using param name as option name)
-    ["age:AGE:age:REQUIRE:validate_age"]="Person's age (required, 1-120)"
+    "age:AGE:age:REQUIRE:validate_age:Person's age (required, 1-120)"
     
     # Required parameter with custom option name and validator
-    ["email:EMAIL:email-address:REQUIRE:validate_email"]="Email address (required)"
+    "email:EMAIL:email-address:REQUIRE:validate_email:Email address (required)"
     
     # Optional parameter (with custom option name)
-    ["location:LOCATION:place"]="Person's location"
+    "location:LOCATION:place:Person's location"
 )
 
 # Process all parameters in one step

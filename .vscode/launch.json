@@ -21,6 +21,18 @@
         {
             "type": "bashdb",
             "request": "launch",
+            "name": "debug params required example",
+            "program": "${workspaceFolder}/Samples/params_required_example.sh",
+            "terminalKind": "integrated",
+            "args": [
+                "--name", "John Doe",
+                "--age", "30",
+                "--email-address", "john.doe@example.com"
+            ]
+        },
+        {
+            "type": "bashdb",
+            "request": "launch",
             "name": "Bash-Debug GFX Config (NVIDIA)",
             "program": "${file}",
             "terminalKind": "integrated",
