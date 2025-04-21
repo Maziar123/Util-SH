@@ -37,7 +37,7 @@ fi
 
 # Enable debug mode for param_handler
 # Set to 1 to see detailed debug messages during parameter processing
-DEBUG_MSG=1
+#DEBUG_MSG=1
 
 # Define validator functions
 # These functions should return 0 for valid input, non-zero for invalid

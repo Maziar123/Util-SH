@@ -5,7 +5,7 @@
 # VERSION: 1.1.0
 
 # Debug flag (set to 1 to enable debug messages)
-declare -g DEBUG_MSG=0
+#declare -g DEBUG_MSG=0
 
 # Color definitions
 BLUE="\e[34m"
@@ -107,10 +107,21 @@ param_handler::generate_parser_definition() {
         local description="${PARAM_HANDLER_CONFIG["${param_name}_desc"]}"
         local required="${PARAM_HANDLER_CONFIG["${param_name}_required"]}"
         
+        # Fix: Handle empty option names by defaulting to param_name
+        if [[ -z "$opt_name" ]]; then
+            opt_name="$param_name"
+        fi
+        
+        # Fix: Ensure description is not empty and not just "REQUIRE"
+        local display_desc="${description}"
+        if [[ -z "$display_desc" || "$display_desc" == "REQUIRE" ]]; then
+            display_desc="$param_name parameter"
+        fi
+        
         if [[ "$required" == "REQUIRE" ]]; then
-            echo "    param ${var_name} --${opt_name} -- \"${description} (REQUIRED)\""
+            echo "    param ${var_name} --${opt_name} -- \"${display_desc} (REQUIRED)\""
         else
-            echo "    param ${var_name} --${opt_name} -- \"${description}\""
+            echo "    param ${var_name} --${opt_name} -- \"${display_desc}\""
         fi
     done
     
@@ -246,9 +257,9 @@ param_handler::handle_required_params() {
         
         # Update parameter tracking
         PARAM_HANDLER_SET_BY_NAME[i]=1
-        set -x # Print commands as they execute
+        #set -x # Print commands as they execute
         PARAM_HANDLER_NAMED_COUNT=$((PARAM_HANDLER_NAMED_COUNT + 1))
-        set +x # Stop printing commands as they execute
+        #set +x # Stop printing commands as they execute
     done
     
     return $missing_required
@@ -538,18 +549,51 @@ param_handler::simple_handle() {
                 option_name="${parts[2]}"
                 description="${parts[3]}"
                 ;;
-            5) # internal_name:VAR_NAME:option_name:description:REQUIRE
+            5) # internal_name:VAR_NAME:option_name:description/REQUIRE:validate_age/description
                 option_name="${parts[2]}"
-                description="${parts[3]}"
-                required="${parts[4]}"
+                
+                # Check if the 4th part is "REQUIRE"
+                if [[ "${parts[3]}" == "REQUIRE" ]]; then
+                    required="REQUIRE"
+                    # The 5th part might be a getter_func or description
+                    if [[ "${parts[4]}" == *" "* ]]; then
+                        description="${parts[4]}"
+                    else
+                        getter_func="${parts[4]}"
+                    fi
+                else
+                    # Normal format with description and REQUIRE flag
+                    description="${parts[3]}"
+                    required="${parts[4]}"
+                fi
                 ;;
             6) # internal_name:VAR_NAME:option_name:description:REQUIRE:getter_func
+                # OR internal_name:VAR_NAME:option_name:REQUIRE:getter_func:description
                 option_name="${parts[2]}"
-                description="${parts[3]}"
-                required="${parts[4]}"
-                getter_func="${parts[5]}"
+                
+                # Check if the 4th part is "REQUIRE"
+                if [[ "${parts[3]}" == "REQUIRE" ]]; then
+                    required="REQUIRE"
+                    getter_func="${parts[4]}"
+                    description="${parts[5]}"
+                else
+                    # Standard format
+                    description="${parts[3]}"
+                    required="${parts[4]}"
+                    getter_func="${parts[5]}"
+                fi
                 ;;
         esac
+        
+        # Fix: Make sure description is not empty
+        if [[ -z "$description" ]]; then
+            description="$internal_name parameter"
+        fi
+        
+        # Debug output if enabled
+        if [[ "$DEBUG_MSG" -eq 1 ]]; then
+            echo "Before registration: $internal_name, var: $var_name, opt: $option_name, desc: $description, required: $required, getter: $getter_func" >&2
+        fi
         
         # Create the variable if it doesn't exist
         if ! declare -p "$var_name" &>/dev/null; then
@@ -561,7 +605,7 @@ param_handler::simple_handle() {
         
         # Debug output if enabled
         if [[ "$DEBUG_MSG" -eq 1 ]]; then
-            echo "Registered parameter: $internal_name, var: $var_name, opt: $option_name, desc: $description" >&2
+            echo "Registered parameter: $internal_name, var: $var_name, opt: $option_name, desc: $description, required: $required, getter: $getter_func" >&2
         fi
     done
     
