@@ -6,4 +6,4 @@
 --shell bash
 --helperdir tests
 --banner
---pattern "*_spec.sh|sh-global_*.sh"  # Support both naming conventions
+--pattern "*_spec.sh"  # Support only the new naming convention
