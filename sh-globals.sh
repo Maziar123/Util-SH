@@ -3,9 +3,9 @@
 # VERSION: 1.1.0
 
 # Check if already loaded
-if [[ "${SH_GLOBALS_LOADED:-0}" -eq 1 ]]; then
-    return 0
-fi
+# if [[ "${SH_GLOBALS_LOADED:-0}" -eq 1 ]]; then
+#     return 0
+# fi
 
 # Disable shellcheck warning for unused variables (SC2034) as this is a library file
 # shellcheck disable=SC2034
@@ -19,7 +19,7 @@ fi
 set -e
 
 # Set this variable to indicate sh-globals.sh has been loaded
-export SH_GLOBALS_LOADED=1
+SH_GLOBALS_LOADED=1
 
 # ======== COLOR AND FORMATTING DEFINITIONS ========
 # Text colors
@@ -986,6 +986,121 @@ format_bytes() {
 # Display a plain message
 msg() {
   echo -e "$*"
+}
+
+# Display a black message
+msg_black() {
+  echo -e "${BLACK}$*${NC}"
+}
+
+# Display a red message
+msg_red() {
+  echo -e "${RED}$*${NC}"
+}
+
+# Display a green message
+msg_green() {
+  echo -e "${GREEN}$*${NC}"
+}
+
+# Display a yellow message
+msg_yellow() {
+  echo -e "${YELLOW}$*${NC}"
+}
+
+# Display a blue message
+msg_blue() {
+  echo -e "${BLUE}$*${NC}"
+}
+
+# Display a magenta message
+msg_magenta() {
+  echo -e "${MAGENTA}$*${NC}"
+}
+
+# Display a cyan message
+msg_cyan() {
+  echo -e "${CYAN}$*${NC}"
+}
+
+# Display a white message
+msg_white() {
+  echo -e "${WHITE}$*${NC}"
+}
+
+# Display a gray message
+msg_gray() {
+  echo -e "${GRAY}$*${NC}"
+}
+
+# Display a message with black background
+msg_bg_black() {
+  echo -e "${BG_BLACK}$*${NC}"
+}
+
+# Display a message with red background
+msg_bg_red() {
+  echo -e "${BG_RED}$*${NC}"
+}
+
+# Display a message with green background
+msg_bg_green() {
+  echo -e "${BG_GREEN}$*${NC}"
+}
+
+# Display a message with yellow background
+msg_bg_yellow() {
+  echo -e "${BG_YELLOW}$*${NC}"
+}
+
+# Display a message with blue background
+msg_bg_blue() {
+  echo -e "${BG_BLUE}$*${NC}"
+}
+
+# Display a message with magenta background
+msg_bg_magenta() {
+  echo -e "${BG_MAGENTA}$*${NC}"
+}
+
+# Display a message with cyan background
+msg_bg_cyan() {
+  echo -e "${BG_CYAN}$*${NC}"
+}
+
+# Display a message with white background
+msg_bg_white() {
+  echo -e "${BG_WHITE}$*${NC}"
+}
+
+# Display a bold message
+msg_bold() {
+  echo -e "${BOLD}$*${NC}"
+}
+
+# Display a dim message
+msg_dim() {
+  echo -e "${DIM}$*${NC}"
+}
+
+# Display an underlined message
+msg_underline() {
+  echo -e "${UNDERLINE}$*${NC}"
+}
+
+# Display a blinking message
+msg_blink() {
+  echo -e "${BLINK}$*${NC}"
+}
+
+# Display a reversed message
+msg_reverse() {
+  echo -e "${REVERSE}$*${NC}"
+}
+
+# Display a hidden message
+msg_hidden() {
+  echo -e "${HIDDEN}$*${NC}"
 }
 
 # Display an informational message (blue)
