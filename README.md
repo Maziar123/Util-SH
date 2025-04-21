@@ -2,9 +2,21 @@
 
 A collection of comprehensive shell utility libraries providing common functions and tools for bash scripts.
 
+
+
+[![Stand With Ukraine](https://img.shields.io/badge/Stand%20With-Ukraine-0057B8?logo=unicef&logoColor=yellow)](https://supportukrainenow.org/)
+
+> 🇺🇦 This project stands with the people of Ukraine.
+
+## How to Help
+
+- [Support Ukraine Now](https://supportukrainenow.org/)
+- [Donate to Come Back Alive](https://www.comebackalive.in.ua/)
+
 ## Table of Contents
 
 - [Bash Utility Libraries](#bash-utility-libraries)
+  - [How to Help](#how-to-help)
   - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
   - [Installation](#installation)
