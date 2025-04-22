@@ -20,10 +20,14 @@ TMUX_TERM_EMULATOR="${TMUX_TERM_EMULATOR:-}"
 # Array to track temporary scripts for each session
 declare -A TMUX_SESSION_TEMPS=()
 
+# Global variable to hold the result of handle_duplicate_session
+CHOSEN_SESSION_NAME=""
+
 # Detect available terminal if not specified
 detect_terminal_emulator() {
     # If already set and exists, use it
     if [[ -n "${TMUX_TERM_EMULATOR}" ]] && command -v "${TMUX_TERM_EMULATOR}" &>/dev/null; then
+        msg_debug "Using pre-configured terminal: ${TMUX_TERM_EMULATOR}"
         return 0
     fi
     
@@ -33,51 +37,88 @@ detect_terminal_emulator() {
     for term in "${terminals[@]}"; do
         if command -v "${term}" &>/dev/null; then
             TMUX_TERM_EMULATOR="${term}"
-            log_debug "Detected terminal emulator: ${TMUX_TERM_EMULATOR}"
+            msg_debug "Detected terminal emulator: ${TMUX_TERM_EMULATOR}"
             return 0
         fi
     done
     
-    log_debug "No suitable terminal emulator found"
+    msg_debug "No suitable terminal emulator found"
     return 1
 }
 
-# Create a new tmux session and open it in a terminal
-# Returns the session name on success, empty string on failure
-create_tmux_session() {
-    # Check if a session name was provided, otherwise generate one
-    local session_name="${1:-tmux_session_$(date +%Y%m%d_%H%M%S)}"
-    log_debug "Creating session: ${session_name}"
-    
-    # Create detached session
-    if ! tmux new-session -d -s "${session_name}"; then
-        log_debug "Failed to create tmux session"
-        return 1
-    fi
+# Launch a terminal with a tmux session
+# Arguments:
+#   $1: Session name
+# Returns: 0 on success, 1 on failure
+launch_tmux_terminal() {
+    local session_name="${1}"
     
     # Detect terminal emulator if not already set
     detect_terminal_emulator || {
-        log_debug "No terminal emulator available"
-        # Don't fail completely, just warn - the session is still created
+        msg_error "No terminal emulator available to launch session '${session_name}'"
+        return 1
     }
     
     # Open terminal with tmux session if we have one
     if [[ -n "${TMUX_TERM_EMULATOR}" ]]; then
+        msg_debug "Launching terminal '${TMUX_TERM_EMULATOR}' for session '${session_name}'"
         # Handle different terminal syntax
         case "${TMUX_TERM_EMULATOR}" in
             konsole)
-                "${TMUX_TERM_EMULATOR}" --new-tab -e tmux attach-session -t "${session_name}" &
+                # Suppress Qt errors to stderr
+                "${TMUX_TERM_EMULATOR}" --new-tab -e tmux attach-session -t "${session_name}" 2>/dev/null &
                 ;;
             gnome-terminal|xfce4-terminal)
-                "${TMUX_TERM_EMULATOR}" -- tmux attach-session -t "${session_name}" &
+                "${TMUX_TERM_EMULATOR}" -- tmux attach-session -t "${session_name}" 2>/dev/null &
                 ;;
             *)
                 # Generic fallback
-                "${TMUX_TERM_EMULATOR}" -e "tmux attach-session -t ${session_name}" &
+                "${TMUX_TERM_EMULATOR}" -e "tmux attach-session -t ${session_name}" 2>/dev/null &
                 ;;
         esac
+        
+        # Check if terminal launch succeeded based on process status
+        local terminal_pid=$!
+        sleep 0.5
+        if kill -0 $terminal_pid 2>/dev/null; then
+            msg_debug "Terminal launch succeeded (PID: $terminal_pid)"
+            return 0
+        else
+            msg_warning "Terminal launch may have failed for '${session_name}', but session was created."
+            return 1 # Still indicate potential issue
+        fi
     else
-        log_debug "No terminal emulator available. Use 'tmux attach-session -t ${session_name}' to connect."
+        msg_error "No terminal emulator available"
+        return 1
+    fi
+}
+
+# Create a new tmux session and open it in a terminal
+# Arguments:
+#   $1: Session name (optional)
+#   $2: Launch terminal flag (optional, default: true)
+# Returns the session name on success, empty string on failure
+create_tmux_session() {
+    # Check if a session name was provided, otherwise generate one
+    local session_name="${1:-tmux_session_$(date +%Y%m%d_%H%M%S)}"
+    local launch_terminal="${2:-true}"
+    
+    msg_debug "Attempting to create session: ${session_name}"
+    
+    # Create detached session
+    if ! tmux new-session -d -s "${session_name}"; then
+        msg_error "Failed to create tmux session '${session_name}'"
+        return 1
+    fi
+    
+    # Launch terminal if requested
+    if [[ "${launch_terminal}" == "true" ]]; then
+        if ! launch_tmux_terminal "${session_name}"; then
+            msg_warning "Terminal launch failed for '${session_name}', but session created."
+            # Continue as the session was still created successfully
+        fi
+    else
+        msg_info "Terminal launch skipped. Use 'tmux attach-session -t ${session_name}' to connect."
     fi
     
     # Give tmux a moment to initialize
@@ -85,9 +126,9 @@ create_tmux_session() {
     
     # Check if session was created successfully
     if ! tmux has-session -t "${session_name}" 2>/dev/null; then
-        log_debug "Session verification failed"
-            return 1
-        fi
+        msg_error "Session verification failed for '${session_name}'"
+        return 1
+    fi
     
     # Log session creation
     {
@@ -132,7 +173,7 @@ execute_in_pane() {
     local pane="${2}" 
     local cmd="${3}"
     
-    log_debug "Exec in ${session}:${pane}: ${cmd}"
+    msg_debug "Exec in ${session}:${pane}: ${cmd}"
     
     # Create a temporary script to execute
     local tmp_script
@@ -164,7 +205,7 @@ execute_in_pane() {
         echo "# Define session self-destruct function"
         echo "tmux_self_destruct() {"
         echo "  local session_name=\$(tmux display-message -p '#S')"
-        echo "  echo \"Closing session \${session_name}...\""
+        echo "  msg_info \"Closing session \${session_name}...\""
         echo "  ( sleep 0.5; tmux kill-session -t \"\${session_name}\" ) &"
         echo "}"
         echo ""
@@ -191,6 +232,9 @@ execute_script() {
     local session="${1}"
     local pane="${2}"
     local vars="${3:-}"  # Optional: variable names to export from current shell
+    
+    # Use msg_debug for internal operation details
+    msg_debug "Execute script in ${session}:0.${pane} (vars: ${vars:-none})"
     
     # Read the script content from heredoc
     local content
@@ -237,7 +281,7 @@ execute_script() {
         echo "# Define session self-destruct function"
         echo "tmux_self_destruct() {"
         echo "  local session_name=\$(tmux display-message -p '#S')"
-        echo "  echo \"Closing session \${session_name}...\""
+        echo "  msg_info \"Closing session \${session_name}...\""
         echo "  ( sleep 0.5; tmux kill-session -t \"\${session_name}\" ) &"
         echo "}"
         echo ""
@@ -265,7 +309,7 @@ create_new_pane() {
     
     # Validate split type
     if [[ "${split_type}" != "h" && "${split_type}" != "v" ]]; then
-        log_debug "Invalid split type: ${split_type}. Using horizontal."
+        msg_warning "Invalid split type: ${split_type}. Using horizontal."
         split_type="h"
     fi
     
@@ -288,7 +332,7 @@ create_new_pane() {
 # List active tmux sessions
 list_tmux_sessions() {
     if ! tmux list-sessions 2>/dev/null; then
-        echo "No active tmux sessions"
+        msg_info "No active tmux sessions"
         return 1
     fi
     return 0
@@ -301,15 +345,15 @@ kill_tmux_session() {
     local session="${1}"
     
     if [[ -z "${session}" ]]; then
-        log_debug "No session name provided"
+        msg_error "Kill session failed: No session name provided"
         return 1
     fi
     
     if tmux kill-session -t "${session}" 2>/dev/null; then
-        log_debug "Killed session: ${session}"
+        msg_info "Killed session: ${session}"
         return 0
     else
-        log_debug "Failed to kill session: ${session}"
+        msg_warning "Failed to kill session (may not exist): ${session}"
         return 1
     fi
 }
@@ -386,6 +430,7 @@ create_new_window() {
         echo "${window_index}"
         return 0
     else
+        msg_error "Failed to create new window in session '${session}'"
         return 1
     fi
 }
@@ -395,17 +440,17 @@ close_tmux_session() {
     local session="${1}"
     
     if [[ -z "${session}" ]]; then
-        log_debug "No session name provided"
+        msg_error "Close session failed: No session name provided"
         return 1
     fi
     
     # Clean up temp scripts associated with this session
     if [[ -n "${TMUX_SESSION_TEMPS[${session}]:-}" ]]; then
-        log_debug "Cleaning up temp files for session ${session}"
+        msg_debug "Cleaning up temp files for session ${session}"
         for tmp_file in ${TMUX_SESSION_TEMPS[${session}]}; do
             if [[ -f "${tmp_file}" ]]; then
                 rm -f "${tmp_file}"
-                log_debug "Removed temp file: ${tmp_file}"
+                msg_debug "Removed temp file: ${tmp_file}"
             fi
         done
         unset TMUX_SESSION_TEMPS[${session}]
@@ -414,17 +459,17 @@ close_tmux_session() {
     # Kill the session
     if tmux has-session -t "${session}" 2>/dev/null; then
         tmux kill-session -t "${session}" 2>/dev/null
-        log_debug "Killed session: ${session}"
+        msg_info "Closed session: ${session}"
         return 0
     else
-        log_debug "Session not found: ${session}"
+        msg_debug "Session not found (already closed?): ${session}"
         return 1
     fi
 }
 
 # Cleanup all sessions and their resources
 cleanup_all_tmux_sessions() {
-    log_debug "Cleaning up all tmux sessions and resources"
+    msg_debug "Cleaning up all tracked tmux sessions and resources"
     
     # Get all sessions managed by us
     local sessions=()
@@ -442,7 +487,7 @@ cleanup_all_tmux_sessions() {
         for tmp_file in ${session_temps}; do
             if [[ -f "${tmp_file}" ]]; then
                 rm -f "${tmp_file}"
-                log_debug "Removed orphaned temp file: ${tmp_file}"
+                msg_debug "Removed orphaned temp file: ${tmp_file}"
             fi
         done
     done
@@ -471,9 +516,12 @@ execute_function() {
     local func_name="${3}"
     local vars="${4:-}"
     
+    # Use msg_debug for internal operation details
+    msg_debug "Execute function '${func_name}' in ${session}:0.${pane} (vars: ${vars:-none})"
+    
     # Check if function exists
     if ! declare -f "${func_name}" > /dev/null; then
-        log_error "Function '${func_name}' not found"
+        msg_error "Function '${func_name}' not found"
         return 1
     fi
     
@@ -522,7 +570,7 @@ execute_function() {
         echo "# Define session self-destruct function"
         echo "tmux_self_destruct() {"
         echo "  local session_name=\$(tmux display-message -p '#S')"
-        echo "  echo \"Closing session \${session_name}...\""
+        echo "  msg_info \"Closing session \${session_name}...\""
         echo "  ( sleep 0.5; tmux kill-session -t \"\${session_name}\" ) &"
         echo "}"
         echo ""
@@ -551,9 +599,12 @@ execute_file() {
     local script_file="${3}"
     local vars="${4:-}"
     
+    # Use msg_debug for internal operation details
+    msg_debug "Execute file '${script_file}' in ${session}:0.${pane} (vars: ${vars:-none})"
+    
     # Check if file exists
     if [[ ! -f "${script_file}" ]]; then
-        log_error "Script file '${script_file}' not found"
+        msg_error "Script file '${script_file}' not found"
         return 1
     fi
     
@@ -602,7 +653,7 @@ execute_file() {
         echo "# Define session self-destruct function"
         echo "tmux_self_destruct() {"
         echo "  local session_name=\$(tmux display-message -p '#S')"
-        echo "  echo \"Closing session \${session_name}...\""
+        echo "  msg_info \"Closing session \${session_name}...\""
         echo "  ( sleep 0.5; tmux kill-session -t \"\${session_name}\" ) &"
         echo "}"
         echo ""
@@ -626,27 +677,18 @@ execute_file() {
 #   $2: Pane index
 #   $3: Shell function to execute (must be defined in the current shell)
 #   $4: Space-separated list of variables to export (optional)
-# Example:
-#   # Define a normal shell function
-#   monitor_files() {
-#     watch_dir="${WATCH_DIR:-$(pwd)}"
-#     echo "Monitoring $watch_dir"
-#     while true; do
-#       find "$watch_dir" -type f -mtime -1 | sort
-#       sleep 5
-#     done
-#   }
-#   # Execute it directly in a tmux pane
-#   execute_shell_function "my_session" 0 monitor_files "WATCH_DIR"
 execute_shell_function() {
     local session="${1}"
     local pane="${2}"
     local func_name="${3}"
     local vars="${4:-}"
     
+    # Use msg_debug for internal operation details
+    msg_debug "Execute shell function '${func_name}' in ${session}:0.${pane} (vars: ${vars:-none})"
+    
     # Check if function exists
     if ! declare -f "${func_name}" > /dev/null; then
-        log_error "Shell function '${func_name}' not found"
+        msg_error "Shell function '${func_name}' not found"
         return 1
     fi
     
@@ -661,56 +703,188 @@ execute_shell_function() {
     # Register this temp file with the session
     TMUX_SESSION_TEMPS[${session}]="${TMUX_SESSION_TEMPS[${session}]:-} ${tmp_script}"
     
-    # Get absolute path to the project directory
+    # Get absolute path to the project directory (still needed for PATH)
     local script_dir
+    # Use a more robust way to find the directory of tmux_utils1.sh itself
     script_dir="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
     
     # Write the script that will run the function
     {
         echo '#!/usr/bin/env bash'
+        # Removed set -x for cleaner output now
         echo ""
         echo "# Set up script environment"
-        echo "SCRIPT_DIR=\"${script_dir}\""
-        echo 'cd "${SCRIPT_DIR}"'
-        echo 'export PATH="${SCRIPT_DIR}:${PATH}"'
+        echo "SCRIPT_DIR=\"$(printf '%q' "${script_dir}")\"" # Use printf %q for robust quoting
+        echo 'export PATH="${SCRIPT_DIR}:${PATH}"' # Keep script dir in PATH
+        echo '# Attempt to cd to script dir, continue if it fails'
+        echo 'cd "${SCRIPT_DIR}" || msg_warning "Could not cd to ${SCRIPT_DIR}"' 
         
         # Export specified variables from parent shell
         if [[ -n "${vars}" ]]; then
             echo "# Export variables from parent shell"
             for var in ${vars}; do
-                # Get value and escape it properly for inclusion in the script
-                local value="${!var}"
-                echo "export ${var}=\"${value}\""
+                # Get value and quote it properly for inclusion in the script
+                printf 'export %s=%q\n' "${var}" "${!var}" # Use printf %q for robust quoting
             done
         fi
         
+        # ADDED back direct sourcing of sh-globals.sh and init
         echo ""
-        echo "# Source sh-globals.sh"
-        echo "source \"${script_dir}/sh-globals.sh\""
+        echo "# Source sh-globals.sh (essential for colors/msg functions)"
+        # Use the known location relative to this script (tmux_utils1.sh)
+        echo "if [[ -f \"${script_dir}/sh-globals.sh\" ]]; then"
+        echo "    source \"${script_dir}/sh-globals.sh\" || { msg_error 'Failed to source sh-globals.sh'; exit 1; }"
+        echo "else"
+        echo "    msg_error \"sh-globals.sh not found at ${script_dir}/sh-globals.sh\"; exit 1;"
+        echo "fi"
         echo ""
-        echo "# Initialize globals"
-        echo "export DEBUG=1"
-        echo "sh-globals_init"
-        echo ""
-        echo "# Define session self-destruct function"
-        echo "tmux_self_destruct() {"
-        echo "  local session_name=\$(tmux display-message -p '#S')"
-        echo "  echo \"Closing session \${session_name}...\""
-        echo "  ( sleep 0.5; tmux kill-session -t \"\${session_name}\" ) &"
-        echo "}"
+        echo "# Initialize globals (optional, but good practice)"
+        echo "export DEBUG=\"$(printf '%q' "${DEBUG:-0}")\"" # Inherit DEBUG or default to 0, quoted
+        # Pass any arguments from the parent script if needed, though usually not for functions
+        # echo "sh-globals_init \"$@\"" 
+        echo "sh-globals_init" # Basic init should be sufficient
+
         echo ""
         echo "# Define the shell function"
         echo "${func_def}"
         echo ""
         echo "# Execute the function"
-        echo "${func_name}"
+        # Pass any arguments originally intended for the function if needed
+        # This example assumes no extra args are passed via execute_shell_function
+        echo "${func_name}" 
+        echo ""
+        echo "# Exit after function completes (optional, prevents pane staying open)"
+        echo "# exit 0" 
+
     } > "${tmp_script}"
     
     # Make script executable
     chmod +x "${tmp_script}"
     
     # Execute temporary script
-    tmux send-keys -t "${session}:0.${pane}" "${tmp_script}" C-m
+    # Use bash explicitly to ensure consistent environment
+    # Quote the script path robustly
+    tmux send-keys -t "${session}:0.${pane}" "bash $(printf '%q' "${tmp_script}")" C-m 
     
     return $?
+}
+
+# Handle duplicate session names
+# Arguments:
+#   $1: Session name
+# Sets global variable CHOSEN_SESSION_NAME:
+#   - Original session name if user chooses to force close existing session or if it didn't exist
+#   - New incremented session name if user chooses to use a new name
+#   - Empty string if user chooses to exit
+handle_duplicate_session() {
+    local session_name="${1}"
+    CHOSEN_SESSION_NAME="" # Reset global variable
+    
+    # Check if session exists
+    if ! tmux has-session -t "${session_name}" 2>/dev/null; then
+        # Session doesn't exist, set original name and return
+        CHOSEN_SESSION_NAME="${session_name}"
+        return 0
+    fi
+    
+    # Session exists, offer options using msg_* functions
+    msg "" # Add a newline
+    msg_section "ATTENTION: Session '${session_name}' already exists!" 52 "="
+    msg "Choose an option:"
+    msg "  1. Force close existing session and create new one"
+    msg "  2. Create new session with incremented name"
+    msg "  3. Exit without creating a session"
+    msg ""
+    
+    local choice
+    # Use prompt_input for getting the choice, though read is also fine here
+    # For simplicity and direct control over timeout, sticking with read but using msg_ for prompt
+    msg_bold "$(msg_yellow "> Enter choice [1-3] (default: 2): ")"
+    # Add timeout to avoid hanging indefinitely (10 seconds)
+    read -r -t 10 choice || choice=2
+    
+    # Add newline after prompt
+    msg ""
+    
+    # Handle timeout - default to option 2
+    if [[ -z "${choice}" ]]; then
+        choice=2
+        msg_info "Timeout or empty input - using option 2 (create new session with incremented name)"
+    fi
+    
+    case "${choice}" in
+        1)
+            # Kill existing session
+            msg_info "Closing existing session '${session_name}'..."
+            tmux kill-session -t "${session_name}" 2>/dev/null
+            CHOSEN_SESSION_NAME="${session_name}"
+            ;;
+        2)
+            # Find an available incremented name
+            local i=1
+            local new_name
+            while true; do
+                new_name="${session_name}_${i}"
+                if ! tmux has-session -t "${new_name}" 2>/dev/null; then
+                    msg_success "Using new session name: ${new_name}"
+                    CHOSEN_SESSION_NAME="${new_name}"
+                    break
+                fi
+                i=$((i + 1))
+            done
+            ;;
+        3)
+            # Exit - Set global variable to empty
+            msg_warning "Exiting without creating a session."
+            CHOSEN_SESSION_NAME=""
+            ;;
+        *)
+            # Invalid choice - default to option 2
+            msg_warning "Invalid choice - using option 2 (create new session with incremented name)"
+            local i=1
+            local new_name
+            while true; do
+                new_name="${session_name}_${i}"
+                if ! tmux has-session -t "${new_name}" 2>/dev/null; then
+                    msg_success "Using new session name: ${new_name}"
+                    CHOSEN_SESSION_NAME="${new_name}"
+                    break
+                fi
+                i=$((i + 1))
+            done
+            ;;
+    esac
+}
+
+# Create a tmux session with duplicate handling
+# Arguments:
+#   $1: Base session name
+#   $2: Launch terminal flag (optional, default: true)
+# Returns:
+#   - 0 on success
+#   - 1 if user chose to exit or creation failed
+# Sets global SESSION_NAME on success
+create_session_with_duplicate_handling() {
+    local base_session_name="${1}"
+    local launch_terminal="${2:-true}"
+    
+    # Handle duplicate session name interactively
+    handle_duplicate_session "${base_session_name}"
+
+    # Use the session name chosen by the user (stored in global variable)
+    local session_name="${CHOSEN_SESSION_NAME}"
+    
+    # Check if user decided to exit (empty global variable)
+    if [[ -z "${session_name}" ]]; then
+        return 1 # User chose to exit
+    fi
+    
+    # Create the session. create_tmux_session sets the global SESSION_NAME
+    if ! create_tmux_session "${session_name}" "${launch_terminal}"; then
+        msg_debug "Session creation failed in create_tmux_session"
+        return 1 # Creation failed
+    fi
+    
+    # Session created successfully, SESSION_NAME is set globally
+    return 0
 }

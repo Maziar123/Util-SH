@@ -173,22 +173,9 @@ counter_blue() {
     echo "Final value: $(cat "${SHARED_FILE}")"
 }
 
-# Main function
-main() {
-    clear
-    echo "Starting Minimal Tmux Counter Demo"
-    echo "Demonstrates variable sharing between two panes"
-    echo ""
-    
-    # Create a new tmux session
-    local session_name
-    session_name=$(create_tmux_session "mini_counter")
-    if [[ -z "${session_name}" ]]; then
-        echo "Failed to create tmux session. Exiting."
-        exit 1
-    fi
-    echo "Created tmux session: ${session_name}"
-    sleep 1
+# Initialize the tmux session
+initialize_session() {
+    local session_name="$1"
     
     # Start the monitor in the first pane
     echo "Starting monitor in pane 0"
@@ -208,17 +195,53 @@ main() {
     execute_shell_function "${session_name}" "${pane2}" counter_blue "SH_GLOBALS_LOADED SHARED_FILE MAX_COUNT DELAY_BLUE"
     
     echo ""
-    echo "Demo started in tmux session: ${session_name}"
+    echo "Mini Counter Demo started in tmux session: ${session_name}"
     echo "Monitor will show counter values in real-time"
-    echo ""
-    echo "Press Ctrl+C to end demonstration"
-    
-    # Keep script running until killed
-    trap 'echo -e "\nDemonstration ended by user"; exit 0' INT
-    while true; do
-        sleep 1
-    done
 }
 
-# Run main function
-main 
+# Main function
+main() {
+    # Parse command-line arguments
+    local headless=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --headless)
+                headless=true
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Create a new tmux session with the launch_terminal parameter controlled by --headless
+    session_name=$(create_tmux_session "mini_counter" "$([ "$headless" = "false" ] && echo true || echo false)")
+    
+    # If we're in headless mode, show connection instructions
+    if [[ "$headless" == "true" ]]; then
+        echo "========================================================"
+        echo "Headless tmux session '${session_name}' created and running!"
+        echo "To connect to this session, run:"
+        msg_info "tmux attach-session -t ${session_name}"
+        echo "========================================================"
+    fi
+    
+    # Set up application panes
+    initialize_session "${session_name}"
+    
+    # Keep parent process running
+    echo "Running session: ${session_name}"
+    echo "Press Ctrl+C to exit"
+    while true; do sleep 1; done
+}
+
+# Show usage
+usage() {
+    echo "Usage: $0 [options]"
+    echo "Options:"
+    echo "  --headless    Create session without launching a terminal"
+}
+
+# === RUN MAIN ===
+main "$@" 

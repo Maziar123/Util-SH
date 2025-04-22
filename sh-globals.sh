@@ -1533,3 +1533,18 @@ parent_path() {
   
   echo "$path"
 } 
+
+# ======== EXPORT FUNCTIONS ========
+# Export message functions to make them available in subshells/executed scripts
+export -f msg msg_black msg_red msg_green msg_yellow msg_blue msg_magenta msg_cyan msg_white msg_gray
+export -f msg_bg_black msg_bg_red msg_bg_green msg_bg_yellow msg_bg_blue msg_bg_magenta msg_bg_cyan msg_bg_white
+export -f msg_bold msg_dim msg_underline msg_blink msg_reverse msg_hidden
+export -f msg_info msg_success msg_warning msg_error msg_highlight msg_header msg_section msg_subtle msg_color msg_step msg_debug
+
+# Export other potentially useful functions
+export -f get_script_name # Used in usage()
+
+export SH_GLOBALS_LOADED
+export -f get_script_dir get_script_name get_script_path get_line_number
+export -f log_init _log_to_file
+export -f log_info log_warn log_error log_debug log_success log_with_timestamp
