@@ -1489,3 +1489,154 @@ tmx_status_pane() {
     echo "$pane_index"
     return 0
 }
+
+# Create a simple unified management pane that handles monitoring and basic control
+# Arguments:
+#   $1: Session name
+#   $2: Variables to monitor (space-separated list of tmux variable names)
+#   $3: Pane options (similar to tmx_pane_function)
+#   $4: Refresh interval in seconds (optional, default: 1)
+# Returns: The index of the management pane
+tmx_manage_pane() {
+    local session="${1}"
+    local monitor_vars="${2}"
+    local pane_option="${3:-0}"  # Default to first pane
+    local refresh="${4:-1}"      # Default refresh rate: 1 second
+    
+    # Define the management function
+    manage_function() {
+        # Get variables list as input parameter
+        local vars="$1"
+        
+        # Get session name and refresh directly from tmux environment
+        local session_name=$(tmux display-message -p '#S')
+        local refresh_rate=1
+        
+        # Try to get refresh rate from tmux environment
+        local tmx_refresh=$(tmux show-environment -t "$session_name" "TMX_REFRESH" 2>/dev/null | cut -d= -f2- || echo "1")
+        if [[ -n "$tmx_refresh" ]]; then
+            refresh_rate="$tmx_refresh"
+        fi
+        
+        # Debug info
+        echo "┌─ Management Pane Initialized ───────────"
+        echo "│ Variables: $vars"
+        echo "│ Session: $session_name"
+        echo "│ Refresh: $refresh_rate seconds"
+        echo "└────────────────────────────────────────"
+        sleep 2
+        
+        # Convert space-separated vars into array for monitoring
+        IFS=' ' read -ra VAR_ARRAY <<< "$vars"
+        
+        # Initialize session start time
+        local start_time=$(date +%s)
+        
+        # Main management loop
+        while true; do
+            # Update session time
+            local current_time=$(date +%s)
+            local elapsed=$((current_time - start_time))
+            tmx_var_set "session_time" "${elapsed}s" "$session_name"
+            
+            clear
+            echo -e "=== TMUX MANAGER ==="
+            echo -e "$(msg_bold "SESSION: ${session_name} | $(date '+%H:%M:%S')")"
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Debug monitor vars and get their values
+            echo "= VARIABLES ="
+            local empty_vars=1
+            
+            for var in "${VAR_ARRAY[@]}"; do
+                # Skip empty variable names
+                if [[ -z "$var" ]]; then
+                    continue
+                fi
+                
+                local value=$(tmux show-environment -t "$session_name" "$var" 2>/dev/null | cut -d= -f2- || echo "N/A")
+                if [[ "$value" == "N/A" ]]; then
+                    # Try getting it with tmx_var_get as fallback
+                    value=$(tmx_var_get "$var" "$session_name" 2>/dev/null || echo "N/A")
+                fi
+                
+                empty_vars=0
+                
+                # Choose color based on variable name
+                if [[ "$var" == *"green"* ]]; then
+                    msg_green "$var: $value"
+                elif [[ "$var" == *"blue"* ]]; then
+                    msg_blue "$var: $value"
+                elif [[ "$var" == *"red"* ]]; then
+                    msg_red "$var: $value"
+                elif [[ "$var" == *"yellow"* ]]; then
+                    msg_yellow "$var: $value"
+                elif [[ "$var" == *"time"* ]]; then
+                    msg_cyan "$var: $value"
+                else
+                    echo "$var: $value"
+                fi
+            done
+            
+            # Show a message if no variables
+            if [[ $empty_vars -eq 1 ]]; then
+                echo "No variables to monitor."
+            fi
+            
+            echo ""
+            echo "= CONTROLS ="
+            echo "Press [q] to quit session | [h] for help"
+            
+            # Check for input (non-blocking)
+            read -t 0.1 -n 1 input
+            if [[ -n "$input" ]]; then
+                case "$input" in
+                    q)
+                        echo "Closing session..."
+                        tmux kill-session -t "$session_name" 2>/dev/null
+                        break
+                        ;;
+                    h)
+                        clear
+                        echo "=== TMUX MANAGER HELP ==="
+                        echo "q - Quit session"
+                        echo "h - Show this help"
+                        echo ""
+                        echo "Press any key to return..."
+                        read -n 1
+                        ;;
+                esac
+            fi
+            
+            sleep "$refresh_rate"
+        done
+    }
+    
+    # Setup management pane
+    local pane_index
+    
+    # Explicitly prepare variables for the function with the session name
+    msg_debug "Setting up management pane with refresh rate: ${refresh} for session: ${session}"
+    
+    # Ensure session_time is in the variables list
+    if [[ ! "$monitor_vars" == *"session_time"* ]]; then
+        monitor_vars="$monitor_vars session_time"
+    fi
+    
+    # Initialize all variables in session
+    IFS=' ' read -ra VAR_ARRAY <<< "$monitor_vars"
+    for var in "${VAR_ARRAY[@]}"; do
+        if [[ -n "$var" ]]; then
+            tmx_var_set "$var" "0" "$session"
+        fi
+    done
+    
+    # Set refresh rate directly in the tmux session environment
+    tmux set-environment -t "$session" "TMX_REFRESH" "$refresh"
+    
+    # Pass only the monitor_vars as parameter - all other data is fetched directly from tmux
+    pane_index=$(tmx_pane_function "$session" manage_function "$pane_option" "$monitor_vars")
+    
+    echo "$pane_index"
+    return 0
+}
