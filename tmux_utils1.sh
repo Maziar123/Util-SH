@@ -696,6 +696,27 @@ execute_shell_function() {
     local func_def
     func_def=$(declare -f "${func_name}")
     
+    # Also export definitions of helper functions needed by func_def
+    local helper_defs
+    # Ensure t_var_set and t_var_get are available before declaring them
+    if ! declare -f t_var_set > /dev/null || ! declare -f t_var_get > /dev/null; then
+      msg_error "Helper functions t_var_set/t_var_get not found in parent shell!"
+      # Attempt to source tmux_utils1.sh directly as a fallback
+      local current_script_path="$(readlink -f "${BASH_SOURCE[0]}")"
+      local utils_path="$(dirname "${current_script_path}")/tmux_utils1.sh"
+      if [[ -f "${utils_path}" ]]; then
+          source "${utils_path}" || { msg_error "Fallback source failed for ${utils_path}"; return 1; }
+      else
+          msg_error "Could not find ${utils_path} for fallback source."; return 1;
+      fi
+      # Check again
+      if ! declare -f t_var_set > /dev/null || ! declare -f t_var_get > /dev/null; then
+           msg_error "Helper functions still not found after fallback source!"
+           return 1
+      fi
+    fi
+    helper_defs=$(declare -f t_var_set t_var_get)
+
     # Create a temporary script
     local tmp_script
     tmp_script=$(mktemp)
@@ -745,7 +766,10 @@ execute_shell_function() {
         echo "sh-globals_init" # Basic init should be sufficient
 
         echo ""
-        echo "# Define the shell function"
+        echo "# Define helper functions needed by the main function"
+        echo "${helper_defs}"
+        echo ""
+        echo "# Define the main shell function to execute"
         echo "${func_def}"
         echo ""
         echo "# Execute the function"
@@ -755,6 +779,14 @@ execute_shell_function() {
         echo ""
         echo "# Exit after function completes (optional, prevents pane staying open)"
         echo "# exit 0" 
+
+        echo "fi"
+        echo ""
+        echo "# Initialize globals (optional, but good practice)"
+        # echo "export DEBUG=\"$(printf '%q' \"${DEBUG:-0}\")\"" # Inherit DEBUG or default to 0, quoted
+        # Pass any arguments from the parent script if needed, though usually not for functions
+        # echo "sh-globals_init \"$@\"" 
+        echo "sh-globals_init" # Basic init should be sufficient
 
     } > "${tmp_script}"
     
@@ -888,3 +920,72 @@ create_session_with_duplicate_handling() {
     # Session created successfully, SESSION_NAME is set globally
     return 0
 }
+
+# ======== TMUX ENVIRONMENT VARIABLE HELPERS ========
+
+# Set a tmux environment variable (global or session-specific)
+# Arguments:
+#   $1: Variable name
+#   $2: Variable value
+#   $3: Target session name (optional, defaults to global)
+t_var_set() {
+    local var_name="${1}"
+    local var_value="${2}"
+    local target_session="${3:-}"
+    local target_flag="-g" # Default to global
+
+    if [[ -n "${target_session}" ]]; then
+        target_flag="-t ${target_session}"
+    fi
+
+    if [[ -z "${var_name}" ]]; then
+        msg_error "t_var_set: Variable name cannot be empty."
+        return 1
+    fi
+
+    msg_debug "Setting tmux env var (${target_flag}): ${var_name}=${var_value}"
+    # Use eval to handle the flag correctly, quote variables
+    eval tmux set-environment "${target_flag}" "$(printf '%q' "${var_name}")" "$(printf '%q' "${var_value}")"
+    return $?
+}
+
+# Get a tmux environment variable (global or session-specific)
+# Arguments:
+#   $1: Variable name
+#   $2: Target session name (optional, defaults to global)
+# Returns: The value of the variable (echoed)
+t_var_get() {
+    local var_name="${1}"
+    local target_session="${2:-}"
+    local target_flag="-g" # Default to global
+    local value
+
+    if [[ -n "${target_session}" ]]; then
+        target_flag="-t ${target_session}"
+    fi
+
+    if [[ -z "${var_name}" ]]; then
+        msg_error "t_var_get: Variable name cannot be empty."
+        return 1
+    fi
+
+    # Use tmux show-environment and parse the output
+    # The output format is "VAR_NAME=value"
+    # Use eval to handle the flag correctly, quote variable name
+    value=$(eval tmux show-environment "${target_flag}" "$(printf '%q' "${var_name}")" 2>/dev/null | cut -d= -f2-)
+
+    # Check if the variable was actually found
+    local check_cmd="tmux show-environment ${target_flag} \"$(printf '%q' "${var_name}")\" &>/dev/null"
+    if [[ -z "${value}" ]] && ! eval "${check_cmd}"; then
+         msg_debug "t_var_get: Variable '${var_name}' not found in tmux environment (${target_flag})."
+         # Optionally return a default or just empty string
+         # echo "" # Return empty string if not found
+         return 1 # Indicate not found via exit code
+    fi
+
+    # Echo the value so it can be captured, e.g., val=$(t_var_get MY_VAR)
+    echo "${value}"
+    return 0
+}
+
+# ======== END TMUX ENVIRONMENT VARIABLE HELPERS ========

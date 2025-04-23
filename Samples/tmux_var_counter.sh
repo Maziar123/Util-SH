@@ -27,8 +27,8 @@ sh-globals_init "$@"
 # Function for the monitor pane - displays both counters
 monitor() {
     # Initialize variables if not set
-    tmux set-environment -g COUNT_GREEN 0
-    tmux set-environment -g COUNT_BLUE 0
+    t_var_set COUNT_GREEN 0
+    t_var_set COUNT_BLUE 0
     
     # Infinite loop to continuously update display
     while true; do
@@ -36,11 +36,11 @@ monitor() {
         echo "=== MONITOR ==="
         
         # Read green counter from tmux environment
-        green_value=$(tmux show-environment -g COUNT_GREEN | cut -d= -f2)
+        green_value=$(t_var_get COUNT_GREEN)
         echo "GREEN: ${green_value}"
         
         # Read blue counter from tmux environment
-        blue_value=$(tmux show-environment -g COUNT_BLUE | cut -d= -f2)
+        blue_value=$(t_var_get COUNT_BLUE)
         echo "BLUE: ${blue_value}"
         
         sleep 1  # Update every second
@@ -52,13 +52,13 @@ green() {
     # Infinite loop to update counter
     while true; do
         # Get current value from tmux environment
-        current=$(tmux show-environment -g COUNT_GREEN | cut -d= -f2)
+        current=$(t_var_get COUNT_GREEN)
         
         # Increment by 2
         v=$((current + 2))
         
         # Update tmux environment variable
-        tmux set-environment -g COUNT_GREEN ${v}
+        t_var_set COUNT_GREEN ${v}
         
         clear
         msg_bg_green "GREEN: ${v}"  # Display with green background
@@ -71,13 +71,13 @@ blue() {
     # Infinite loop to update counter
     while true; do
         # Get current value from tmux environment
-        current=$(tmux show-environment -g COUNT_BLUE | cut -d= -f2)
+        current=$(t_var_get COUNT_BLUE)
         
         # Increment by 3
         v=$((current + 3))
         
         # Update tmux environment variable
-        tmux set-environment -g COUNT_BLUE ${v}
+        t_var_set COUNT_BLUE ${v}
         
         clear
         msg_bg_blue "BLUE: ${v}"  # Display with blue background
@@ -91,8 +91,8 @@ main() {
     s=$(create_tmux_session "tmux_var_$(date +%s)")
     
     # Initialize tmux environment variables
-    tmux set-environment -t ${s} -g COUNT_GREEN 0
-    tmux set-environment -t ${s} -g COUNT_BLUE 0
+    t_var_set COUNT_GREEN 0
+    t_var_set COUNT_BLUE 0
     
     # Start monitor in pane 0 (first pane)
     execute_shell_function "${s}" 0 monitor ""

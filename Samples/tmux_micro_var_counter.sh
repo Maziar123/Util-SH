@@ -43,8 +43,10 @@ done
 # Initialize tmux variables for counters
 init_tmux_vars() {
     local session="$1"
-    tmux set-environment -t "$session" "counter_green" "0"
-    tmux set-environment -t "$session" "counter_blue" "0"
+    # tmux set-environment -t "$session" "counter_green" "0"
+    # tmux set-environment -t "$session" "counter_blue" "0"
+    t_var_set "counter_green" "0" "$session"
+    t_var_set "counter_blue" "0" "$session"
 }
 
 # === PANE FUNCTIONS ===
@@ -55,8 +57,10 @@ monitor() {
     while true; do
         clear
         echo "=== MONITOR ==="
-        echo "GREEN: $(tmux show-environment -t "$session" counter_green | cut -d= -f2)"
-        echo "BLUE: $(tmux show-environment -t "$session" counter_blue | cut -d= -f2)"
+        # echo "GREEN: $(tmux show-environment -t "$session" counter_green | cut -d= -f2)"
+        # echo "BLUE: $(tmux show-environment -t "$session" counter_blue | cut -d= -f2)"
+        msg_green "GREEN: $(t_var_get "counter_green" "$session")"
+        msg_blue "BLUE: $(t_var_get "counter_blue" "$session")"
         sleep 1  # Update every second
     done
 }
@@ -66,8 +70,11 @@ green() {
     local session="$1"
     # Infinite loop to update counter
     while true; do
-        local v=$(($(tmux show-environment -t "$session" counter_green | cut -d= -f2) + 2))
-        tmux set-environment -t "$session" "counter_green" "$v"
+        # local v=$(($(tmux show-environment -t "$session" counter_green | cut -d= -f2) + 2))
+        # tmux set-environment -t "$session" "counter_green" "$v"
+        local current_green=$(t_var_get "counter_green" "$session")
+        local v=$((current_green + 2))
+        t_var_set "counter_green" "$v" "$session"
         clear
         msg_bg_green "GREEN: ${v}"
         sleep 1
@@ -79,8 +86,11 @@ blue() {
     local session="$1"
     # Infinite loop to update counter
     while true; do
-        local v=$(($(tmux show-environment -t "$session" counter_blue | cut -d= -f2) + 3))
-        tmux set-environment -t "$session" "counter_blue" "$v"
+        # local v=$(($(tmux show-environment -t "$session" counter_blue | cut -d= -f2) + 3))
+        # tmux set-environment -t "$session" "counter_blue" "$v"
+        local current_blue=$(t_var_get "counter_blue" "$session")
+        local v=$((current_blue + 3))
+        t_var_set "counter_blue" "$v" "$session"
         clear
         msg_bg_blue "BLUE: ${v}"
         sleep 2
@@ -93,16 +103,21 @@ main() {
     local session_name="micro_var_$(date +%s)"
     s=$(create_tmux_session "${session_name}" "$([ "$HEADLESS" = "false" ] && echo true || echo false)")
     
+    # Show short confirmation box
+    msg_box "Session '${s}' initialized." "$GREEN" 1
+    
     # Initialize tmux variables
     init_tmux_vars "$s"
     
     # If we're in headless mode, show connection instructions
     if [[ "$HEADLESS" == "true" ]]; then
-        echo "========================================================"
-        echo "Headless tmux session '${s}' created and running!"
-        echo "To connect to this session, run:"
-        msg_info "tmux attach-session -t ${s}"
-        echo "========================================================"
+        # Combine the message into a single string for the box
+        local box_text="Headless tmux session '${s}' created and running!\n"
+        box_text+="To connect to this session, run:\n"
+        box_text+="$(msg_info "tmux attach-session -t ${s}")" # Use msg_info for the command itself
+
+        # Use msg_box to display the message
+        msg_box "${box_text}" "$YELLOW"
     fi
     
     # Start monitor in pane 0 (first pane)

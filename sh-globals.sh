@@ -1190,6 +1190,40 @@ msg_debug() {
   fi
 }
 
+# Display a message inside a box
+# Usage: msg_box [text] [color] [padding]
+# Defaults: color=CYAN, padding=1
+msg_box() {
+  local text="$1"
+  local color="${2:-$CYAN}" # Default to Cyan
+  local padding="${3:-1}"
+
+  # Strip ANSI codes to calculate visible length
+  local text_no_color
+  text_no_color=$(echo -e "$text" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g")
+  local text_len
+  text_len=$(echo -n "$text_no_color" | wc -m)
+
+  if [[ $text_len -eq 0 ]]; then
+    # Return silently for empty visible text
+    return
+  fi
+
+  local total_width=$(( text_len + padding * 2 ))
+  local i
+  local border_line=""
+  for ((i=0; i<total_width; i++)); do border_line+="─"; done
+  local padding_str=""
+  for ((i=0; i<padding; i++)); do padding_str+=" "; done
+
+  # Use msg_color for top and bottom borders
+  msg_color "┌${border_line}┐" "$color"
+  # Use echo -e for the middle line to preserve potential colors within the text itself
+  echo -e "${color}│${NC}${padding_str}${text}${padding_str}${color}│${NC}"
+  # Use msg_color for the bottom border
+  msg_color "└${border_line}┘" "$color"
+}
+
 # ======== GET VALUE FUNCTIONS ========
 # Functions to prompt for and validate different types of values
 
@@ -1538,7 +1572,7 @@ parent_path() {
 # Export message functions to make them available in subshells/executed scripts
 export -f msg msg_black msg_red msg_green msg_yellow msg_blue msg_magenta msg_cyan msg_white msg_gray
 export -f msg_bg_black msg_bg_red msg_bg_green msg_bg_yellow msg_bg_blue msg_bg_magenta msg_bg_cyan msg_bg_white
-export -f msg_bold msg_dim msg_underline msg_blink msg_reverse msg_hidden
+export -f msg_bold msg_dim msg_underline msg_blink msg_reverse msg_hidden msg_box
 export -f msg_info msg_success msg_warning msg_error msg_highlight msg_header msg_section msg_subtle msg_color msg_step msg_debug
 
 # Export other potentially useful functions
