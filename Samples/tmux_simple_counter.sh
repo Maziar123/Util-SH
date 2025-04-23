@@ -252,8 +252,7 @@ main() {
     mkdir -p "${SHARED_DIR}"
     
     # Create a new tmux session
-    local session_name
-    session_name=$(create_tmux_session "counter_demo")
+    session_name=$(tmx_create_session "counter_demo")
     if [[ -z "${session_name}" ]]; then
         echo "Failed to create tmux session. Exiting."
         exit 1
@@ -262,27 +261,21 @@ main() {
     sleep 1
     
     # Start the monitor in the first pane
-    echo "Starting monitor in pane 0"
-    execute_shell_function "${session_name}" 0 monitor "SH_GLOBALS_LOADED SHARED_DIR MAX_COUNT DELAY_GREEN DELAY_BLUE DELAY_MAGENTA START_TIME"
+    echo "Starting monitor script..."
+    p0=$(tmx_pane_function "${session_name}" monitor "0" "SH_GLOBALS_LOADED SHARED_DIR MAX_COUNT DELAY_GREEN DELAY_BLUE DELAY_MAGENTA START_TIME")
     sleep 1
     
-    # Start green counter (pane 1)
-    echo "Starting green counter"
-    local pane1
-    pane1=$(create_new_pane "${session_name}" "v")
-    execute_shell_function "${session_name}" "${pane1}" counter_green "SH_GLOBALS_LOADED SHARED_DIR MAX_COUNT DELAY_GREEN"
+    # Create and start the green counter
+    echo "Starting green counter..."
+    p1=$(tmx_pane_function "${session_name}" counter_green "v" "SH_GLOBALS_LOADED SHARED_DIR MAX_COUNT DELAY_GREEN")
     
-    # Start blue counter (pane 2)
-    echo "Starting blue counter"
-    local pane2
-    pane2=$(create_new_pane "${session_name}")
-    execute_shell_function "${session_name}" "${pane2}" counter_blue "SH_GLOBALS_LOADED SHARED_DIR MAX_COUNT DELAY_BLUE"
+    # Create and start the blue counter
+    echo "Starting blue counter..."
+    p2=$(tmx_pane_function "${session_name}" counter_blue "h" "SH_GLOBALS_LOADED SHARED_DIR MAX_COUNT DELAY_BLUE")
     
-    # Start magenta counter (pane 3)
-    echo "Starting magenta counter"
-    local pane3
-    pane3=$(create_new_pane "${session_name}")
-    execute_shell_function "${session_name}" "${pane3}" counter_magenta "SH_GLOBALS_LOADED SHARED_DIR MAX_COUNT DELAY_MAGENTA"
+    # Create and start the magenta counter
+    echo "Starting magenta counter..."
+    p3=$(tmx_pane_function "${session_name}" counter_magenta "h" "SH_GLOBALS_LOADED SHARED_DIR MAX_COUNT DELAY_MAGENTA")
     
     echo ""
     echo "Demo started in tmux session: ${session_name}"

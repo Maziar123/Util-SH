@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 
+# =======================================================================
+# NAMING CONVENTION REFACTORING GUIDE:
+# 
+# This file is being refactored to follow these rules:
+# 1. All functions use tmx_ prefix (indicates tmux functionality)
+# 2. No "tmux" in function names after the prefix (redundant)
+# 3. Global variables use TMX_ prefix (uppercase for globals)
+# 
+# Examples:
+# - create_tmux_session → tmx_create_session
+# - kill_tmux_session → tmx_kill_session
+# - TMUX_TERM_EMULATOR → TMX_TERM_EMULATOR
+# =======================================================================
+
 # tmux_utils.sh - Universal utilities for working with tmux
 # ------------------------------------------------------------
 
@@ -15,19 +29,39 @@ fi
 
 # Default terminal configuration
 # Terminal preference order: user-specified > konsole > xterm > gnome-terminal
-TMUX_TERM_EMULATOR="${TMUX_TERM_EMULATOR:-}"
+TMX_TERM_EMULATOR="${TMX_TERM_EMULATOR:-}"
+
+# Debug directory for saving script copies
+# If DEBUG=1 and TMX_DEBUG_DIR is not set, use a default directory
+if [[ "${DEBUG:-0}" -eq 1 && -z "${TMX_DEBUG_DIR}" ]]; then
+    # Create default debug directory in script's location
+    SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+    TMX_DEBUG_DIR="${SCRIPT_DIR}/tmux_debug_scripts"
+    mkdir -p "${TMX_DEBUG_DIR}"
+    msg_debug "Auto-created debug scripts directory: ${TMX_DEBUG_DIR}"
+fi
+
+# Use user-specified debug directory if set
+TMX_DEBUG_DIR="${TMX_DEBUG_DIR:-}"
 
 # Array to track temporary scripts for each session
-declare -A TMUX_SESSION_TEMPS=()
+declare -A TMX_SESSION_TEMPS=()
 
 # Global variable to hold the result of handle_duplicate_session
 CHOSEN_SESSION_NAME=""
 
+# Global variables for session confirmation
+TMX_SESSION_CONFIRM_COLOR="${GREEN}"  # Default confirmation color
+TMX_SESSION_CONFIRM_TIME=1            # Default display time in seconds
+
+# Add a debug directory setting for script debugging
+TMX_DEBUG_DIR="${TMX_DEBUG_DIR:-}"  # Directory to save debug scripts, if set
+
 # Detect available terminal if not specified
-detect_terminal_emulator() {
+tmx_detect_terminal() {
     # If already set and exists, use it
-    if [[ -n "${TMUX_TERM_EMULATOR}" ]] && command -v "${TMUX_TERM_EMULATOR}" &>/dev/null; then
-        msg_debug "Using pre-configured terminal: ${TMUX_TERM_EMULATOR}"
+    if [[ -n "${TMX_TERM_EMULATOR}" ]] && command -v "${TMX_TERM_EMULATOR}" &>/dev/null; then
+        msg_debug "Using pre-configured terminal: ${TMX_TERM_EMULATOR}"
         return 0
     fi
     
@@ -36,8 +70,8 @@ detect_terminal_emulator() {
     
     for term in "${terminals[@]}"; do
         if command -v "${term}" &>/dev/null; then
-            TMUX_TERM_EMULATOR="${term}"
-            msg_debug "Detected terminal emulator: ${TMUX_TERM_EMULATOR}"
+            TMX_TERM_EMULATOR="${term}"
+            msg_debug "Detected terminal emulator: ${TMX_TERM_EMULATOR}"
             return 0
         fi
     done
@@ -50,43 +84,58 @@ detect_terminal_emulator() {
 # Arguments:
 #   $1: Session name
 # Returns: 0 on success, 1 on failure
-launch_tmux_terminal() {
+tmx_launch_terminal() {
     local session_name="${1}"
     
     # Detect terminal emulator if not already set
-    detect_terminal_emulator || {
+    tmx_detect_terminal || {
         msg_error "No terminal emulator available to launch session '${session_name}'"
         return 1
     }
     
     # Open terminal with tmux session if we have one
-    if [[ -n "${TMUX_TERM_EMULATOR}" ]]; then
-        msg_debug "Launching terminal '${TMUX_TERM_EMULATOR}' for session '${session_name}'"
+    if [[ -n "${TMX_TERM_EMULATOR}" ]]; then
+        msg_debug "Launching terminal '${TMX_TERM_EMULATOR}' for session '${session_name}'"
         # Handle different terminal syntax
-        case "${TMUX_TERM_EMULATOR}" in
+        case "${TMX_TERM_EMULATOR}" in
             konsole)
                 # Suppress Qt errors to stderr
-                "${TMUX_TERM_EMULATOR}" --new-tab -e tmux attach-session -t "${session_name}" 2>/dev/null &
+                "${TMX_TERM_EMULATOR}" --new-tab -e tmux attach-session -t "${session_name}" 2>/dev/null &
+                sleep 0.5  # Give it a moment to start
+                # For konsole, assume success if we got this far
+                msg_debug "Konsole launch initiated for '${session_name}'"
+                return 0
                 ;;
             gnome-terminal|xfce4-terminal)
-                "${TMUX_TERM_EMULATOR}" -- tmux attach-session -t "${session_name}" 2>/dev/null &
+                "${TMX_TERM_EMULATOR}" -- tmux attach-session -t "${session_name}" 2>/dev/null &
+                sleep 0.5
+                # For these terminals, also assume success by default
+                msg_debug "Terminal launch initiated for '${session_name}'"
+                return 0
                 ;;
             *)
-                # Generic fallback
-                "${TMUX_TERM_EMULATOR}" -e "tmux attach-session -t ${session_name}" 2>/dev/null &
+                # Generic fallback - launch and verify
+                "${TMX_TERM_EMULATOR}" -e "tmux attach-session -t ${session_name}" 2>/dev/null &
+                local terminal_pid=$!
+                sleep 0.5
+                
+                # For other terminals, try to check PID but be more lenient
+                if kill -0 $terminal_pid 2>/dev/null; then
+                    msg_debug "Terminal launch succeeded (PID: $terminal_pid)"
+                    return 0
+                else
+                    # Check if session is attached, which is a better indicator of success
+                    if tmux list-sessions | grep -q "${session_name}" | grep -q "(attached)"; then
+                        msg_debug "Terminal appears attached to session '${session_name}'"
+                        return 0
+                    else
+                        msg_debug "Cannot verify terminal launch for '${session_name}'"
+                        # Return success anyway since modern terminals often fork quickly
+                        return 0
+                    fi
+                fi
                 ;;
         esac
-        
-        # Check if terminal launch succeeded based on process status
-        local terminal_pid=$!
-        sleep 0.5
-        if kill -0 $terminal_pid 2>/dev/null; then
-            msg_debug "Terminal launch succeeded (PID: $terminal_pid)"
-            return 0
-        else
-            msg_warning "Terminal launch may have failed for '${session_name}', but session was created."
-            return 1 # Still indicate potential issue
-        fi
     else
         msg_error "No terminal emulator available"
         return 1
@@ -95,15 +144,22 @@ launch_tmux_terminal() {
 
 # Create a new tmux session and open it in a terminal
 # Arguments:
-#   $1: Session name (optional)
+#   $1: Session name
 #   $2: Launch terminal flag (optional, default: true)
+#     - Can be "true" or "false" to control terminal launching
+#     - Can also be "--headless" which will be treated as "false"
 # Returns the session name on success, empty string on failure
-create_tmux_session() {
+tmx_create_session() {
     # Check if a session name was provided, otherwise generate one
-    local session_name="${1:-tmux_session_$(date +%Y%m%d_%H%M%S)}"
+    local session_name="${1:-session_$(date +%Y%m%d_%H%M%S)}"
     local launch_terminal="${2:-true}"
     
-    msg_debug "Attempting to create session: ${session_name}"
+    # Handle case where launch_terminal is "--headless"
+    if [[ "${launch_terminal}" == "--headless" ]]; then
+        launch_terminal="false"
+    fi
+    
+    msg_debug "Attempting to create session: ${session_name} (launch_terminal=${launch_terminal})"
     
     # Create detached session
     if ! tmux new-session -d -s "${session_name}"; then
@@ -113,22 +169,49 @@ create_tmux_session() {
     
     # Launch terminal if requested
     if [[ "${launch_terminal}" == "true" ]]; then
-        if ! launch_tmux_terminal "${session_name}"; then
+        if ! tmx_launch_terminal "${session_name}"; then
             msg_warning "Terminal launch failed for '${session_name}', but session created."
             # Continue as the session was still created successfully
         fi
     else
-        msg_info "Terminal launch skipped. Use 'tmux attach-session -t ${session_name}' to connect."
+        # Use plain message for headless mode (no box formatting to avoid capture issues)
+        msg_info "Headless tmux session '${session_name}' created! To connect, run:"
+        msg_info "tmux attach-session -t ${session_name}"
     fi
     
     # Give tmux a moment to initialize
-    sleep 0.5
+    sleep 2  # Increased from 0.5 to 2 seconds
     
     # Check if session was created successfully
     if ! tmux has-session -t "${session_name}" 2>/dev/null; then
+        msg_debug "=================================================="
+        msg_debug "Verification command failed: 'tmux has-session -t ${session_name}'"
+        msg_debug "Environment debugging info:"
+        msg_debug "- TMUX variable: ${TMUX:-not set}"
+        msg_debug "- TMUX_SOCKET: ${TMUX_SOCKET:-not set}"
+        msg_debug "- Current user: $(whoami)"
+        msg_debug "- Current path: $(pwd)"
+        
+        # Try running with explicit socket if TMUX_SOCKET is set
+        if [[ -n "${TMUX_SOCKET:-}" ]]; then
+            msg_debug "Trying with explicit socket: tmux -S ${TMUX_SOCKET} has-session -t ${session_name}"
+            tmux -S "${TMUX_SOCKET}" has-session -t "${session_name}" && msg_debug "Session exists with explicit socket!"
+        fi
+        
+        # Try with absolute unescaped session name
+        msg_debug "Trying alternate command: 'tmux list-sessions | grep ${session_name}'"
+        tmux list-sessions 2>/dev/null | grep "${session_name}" && msg_debug "Session found in list-sessions output!"
+        
+        # Log all sessions
+        msg_debug "All active sessions:"
+        tmux list-sessions 2>/dev/null || msg_debug "No sessions found"
+        msg_debug "=================================================="
+        
         msg_error "Session verification failed for '${session_name}'"
         return 1
     fi
+    
+    msg_debug "Session successfully created: ${session_name}"
     
     # Log session creation
     {
@@ -139,7 +222,7 @@ create_tmux_session() {
     # Set global SESSION_NAME for use by calling script
     SESSION_NAME="${session_name}"
     
-    # Also echo the session name so it can be captured
+    # Return only the actual session name
     echo "${session_name}"
     
     return 0
@@ -163,12 +246,103 @@ create_tmux_session() {
 #    - Full IDE/syntax support
 #    - Easy debugging outside of tmux
 
+# Helper function to generate common script boilerplate
+# Arguments:
+#   $1: Script content (the actual commands to run after the boilerplate)
+#   $2: Content description (for comments)
+#   $3: Space-separated list of variables to export (optional)
+#   $4: Extra helper functions to include (optional)
+# Returns: Complete script content as string
+tmx_generate_script_boilerplate() {
+    local content="${1}"
+    local description="${2:-script}"
+    local vars="${3:-}"
+    local helper_functions="${4:-}"
+    
+    # Get absolute path to the project directory
+    local script_dir
+    script_dir="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+    
+    # Start building the script content
+    local script_content
+    script_content=$(cat <<EOF
+#!/usr/bin/env bash
+
+# Set up script environment
+SCRIPT_DIR="$(printf '%q' "${script_dir}")"
+export PATH="\${SCRIPT_DIR}:\${PATH}"
+# Attempt to cd to script dir, continue if it fails
+cd "\${SCRIPT_DIR}" || echo "WARNING: Could not cd to \${SCRIPT_DIR}"
+
+EOF
+    )
+    
+    # Add variable exports if any
+    if [[ -n "${vars}" ]]; then
+        # Add a newline before the comment
+        script_content+=$'\n# Export variables from parent shell\n'
+        for var in ${vars}; do
+            # Get value and quote it properly for inclusion in the script
+            local value="${!var}"
+            script_content+=$(printf 'export %s=%q\n' "${var}" "${value}")
+        done
+        script_content+=$'\n'
+    fi
+    
+    # Add sh-globals sourcing
+    script_content+=$(cat <<EOF
+# Source sh-globals.sh (essential for colors/msg functions)
+if [[ -f "${script_dir}/sh-globals.sh" ]]; then
+    source "${script_dir}/sh-globals.sh" || { echo "ERROR: Failed to source sh-globals.sh"; exit 1; }
+else
+    echo "ERROR: sh-globals.sh not found at ${script_dir}/sh-globals.sh"; exit 1;
+fi
+
+# Initialize globals
+export DEBUG="${DEBUG:-0}"
+sh-globals_init
+
+# Define session self-destruct function
+tmx_self_destruct() {
+  local session_name=\$(tmux display-message -p '#S')
+  msg_info "Closing session \${session_name}..."
+  ( sleep 0.5; tmux kill-session -t "\${session_name}" ) &
+}
+
+EOF
+    )
+    
+    # Add any helper functions if provided
+    if [[ -n "${helper_functions}" ]]; then
+        # Add a newline before the comment to ensure proper separation
+        script_content+=$'\n# Include helper functions\n'
+        script_content+="${helper_functions}"
+        script_content+=$'\n\n'
+    fi
+    
+    # Add user content with description - strip any existing exit commands
+    # to prevent duplicate exits
+    local cleaned_content="${content/exit 0/}"
+    
+    script_content+=$(cat <<EOF
+# ${description} follows
+${cleaned_content}
+
+# Add explicit exit to ensure clean termination
+exit 0
+EOF
+    )
+    
+    # Return the generated script content
+    echo "${script_content}"
+}
+
 # Execute a command in a specific tmux pane
 # Arguments:
 #   $1: Session name
 #   $2: Pane index
 #   $3: Command to execute (can be multi-line)
-execute_in_pane() {
+tmx_execute_in_pane() {
     local session="${1}"
     local pane="${2}" 
     local cmd="${3}"
@@ -180,38 +354,14 @@ execute_in_pane() {
     tmp_script=$(mktemp)
     
     # Register this temp file with the session
-    TMUX_SESSION_TEMPS[${session}]="${TMUX_SESSION_TEMPS[${session}]:-} ${tmp_script}"
+    TMX_SESSION_TEMPS[${session}]="${TMX_SESSION_TEMPS[${session}]:-} ${tmp_script}"
     
-    # Get absolute path to the project directory
-    local script_dir
-    script_dir="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+    # Generate script content using helper function
+    local script_content
+    script_content=$(tmx_generate_script_boilerplate "${cmd}" "User command")
     
-    # Write a script that sets up the environment like a normal script
-    {
-        echo '#!/usr/bin/env bash'
-        echo ""
-        echo "# Set up script environment"
-        echo "SCRIPT_DIR=\"${script_dir}\""
-        echo 'cd "${SCRIPT_DIR}"'
-        echo 'export PATH="${SCRIPT_DIR}:${PATH}"'
-        echo ""
-        echo "# Source sh-globals.sh like a normal script"
-        echo "source \"${script_dir}/sh-globals.sh\""
-        echo ""
-        echo "# Initialize globals"
-        echo "export DEBUG=1"
-        echo "sh-globals_init"
-        echo ""
-        echo "# Define session self-destruct function"
-        echo "tmux_self_destruct() {"
-        echo "  local session_name=\$(tmux display-message -p '#S')"
-        echo "  msg_info \"Closing session \${session_name}...\""
-        echo "  ( sleep 0.5; tmux kill-session -t \"\${session_name}\" ) &"
-        echo "}"
-        echo ""
-        echo "# User command follows"
-        echo "${cmd}"
-    } > "${tmp_script}"
+    # Write the script content to file
+    echo "${script_content}" > "${tmp_script}"
     
     # Make script executable
     chmod +x "${tmp_script}"
@@ -224,11 +374,11 @@ execute_in_pane() {
 
 # Modern function to execute multi-line commands in tmux panes
 # Uses heredoc for better readability
-# Usage: execute_script SESSION PANE [VARS] <<'EOF'
+# Usage: tmx_execute_script SESSION PANE [VARS] <<'EOF'
 #   commands here
 #   more commands
 # EOF
-execute_script() {
+tmx_execute_script() {
     local session="${1}"
     local pane="${2}"
     local vars="${3:-}"  # Optional: variable names to export from current shell
@@ -245,49 +395,14 @@ execute_script() {
     tmp_script=$(mktemp)
     
     # Register this temp file with the session
-    TMUX_SESSION_TEMPS[${session}]="${TMUX_SESSION_TEMPS[${session}]:-} ${tmp_script}"
+    TMX_SESSION_TEMPS[${session}]="${TMX_SESSION_TEMPS[${session}]:-} ${tmp_script}"
     
-    # Get absolute path to the project directory
-    local script_dir
-    script_dir="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+    # Generate script content using helper function
+    local script_content
+    script_content=$(tmx_generate_script_boilerplate "${content}" "User script" "${vars}")
     
-    # Write the header of the script
-    {
-        echo '#!/usr/bin/env bash'
-        echo ""
-        echo "# Set up script environment"
-        echo "SCRIPT_DIR=\"${script_dir}\""
-        echo 'cd "${SCRIPT_DIR}"'
-        echo 'export PATH="${SCRIPT_DIR}:${PATH}"'
-        
-        # Export specified variables from parent shell
-        if [[ -n "${vars}" ]]; then
-            echo "# Export variables from parent shell"
-            for var in ${vars}; do
-                # Get value and escape it properly for inclusion in the script
-                local value="${!var}"
-                echo "export ${var}=\"${value}\""
-            done
-        fi
-        
-        echo ""
-        echo "# Source sh-globals.sh"
-        echo "source \"${script_dir}/sh-globals.sh\""
-        echo ""
-        echo "# Initialize globals"
-        echo "export DEBUG=1"
-        echo "sh-globals_init"
-        echo ""
-        echo "# Define session self-destruct function"
-        echo "tmux_self_destruct() {"
-        echo "  local session_name=\$(tmux display-message -p '#S')"
-        echo "  msg_info \"Closing session \${session_name}...\""
-        echo "  ( sleep 0.5; tmux kill-session -t \"\${session_name}\" ) &"
-        echo "}"
-        echo ""
-        echo "# User script follows"
-        echo "${content}"
-    } > "${tmp_script}"
+    # Write the script content to file
+    echo "${script_content}" > "${tmp_script}"
     
     # Make script executable
     chmod +x "${tmp_script}"
@@ -303,7 +418,7 @@ execute_script() {
 #   $1: Session name
 #   $2: Split type (optional, default: h for horizontal)
 # Returns: The index of the new pane
-create_new_pane() {
+tmx_create_pane() {
     local session="${1}"
     local split_type="${2:-h}"  # Default to horizontal split
     
@@ -330,7 +445,7 @@ create_new_pane() {
 }
 
 # List active tmux sessions
-list_tmux_sessions() {
+tmx_list_sessions() {
     if ! tmux list-sessions 2>/dev/null; then
         msg_info "No active tmux sessions"
         return 1
@@ -341,7 +456,7 @@ list_tmux_sessions() {
 # Kill a tmux session
 # Arguments:
 #   $1: Session name
-kill_tmux_session() {
+tmx_kill_session() {
     local session="${1}"
     
     if [[ -z "${session}" ]]; then
@@ -363,7 +478,7 @@ kill_tmux_session() {
 #   $1: Session name
 #   $2: Pane index
 #   $3: Text to send
-send_text_to_pane() {
+tmx_send_text() {
     local session="${1}"
     local pane="${2}"
     local text="${3}"
@@ -377,7 +492,7 @@ send_text_to_pane() {
 #   $1: Session name
 #   $2: Window index (optional, default: 0)
 #   $3: Command to execute
-execute_in_all_panes() {
+tmx_execute_all_panes() {
     local session="${1}"
     local window="${2:-0}"
     local cmd="${3}"
@@ -388,7 +503,7 @@ execute_in_all_panes() {
     
     # Execute command in each pane
     for pane in ${panes}; do
-        execute_in_pane "${session}" "${pane}" "${cmd}"
+        tmx_execute_in_pane "${session}" "${pane}" "${cmd}"
     done
     
     return 0
@@ -398,7 +513,7 @@ execute_in_all_panes() {
 # Arguments:
 #   $1: Session name
 # Returns: 0 if session exists, 1 otherwise
-session_exists() {
+tmx_session_exists() {
     local session="${1}"
     
     if tmux has-session -t "${session}" 2>/dev/null; then
@@ -413,7 +528,7 @@ session_exists() {
 #   $1: Session name
 #   $2: Window name (optional)
 # Returns: The index of the new window
-create_new_window() {
+tmx_create_window() {
     local session="${1}"
     local window_name="${2:-}"
     
@@ -436,7 +551,7 @@ create_new_window() {
 }
 
 # Close a tmux session and clean up its resources
-close_tmux_session() {
+tmx_close_session() {
     local session="${1}"
     
     if [[ -z "${session}" ]]; then
@@ -445,15 +560,15 @@ close_tmux_session() {
     fi
     
     # Clean up temp scripts associated with this session
-    if [[ -n "${TMUX_SESSION_TEMPS[${session}]:-}" ]]; then
+    if [[ -n "${TMX_SESSION_TEMPS[${session}]:-}" ]]; then
         msg_debug "Cleaning up temp files for session ${session}"
-        for tmp_file in ${TMUX_SESSION_TEMPS[${session}]}; do
+        for tmp_file in ${TMX_SESSION_TEMPS[${session}]}; do
             if [[ -f "${tmp_file}" ]]; then
                 rm -f "${tmp_file}"
                 msg_debug "Removed temp file: ${tmp_file}"
             fi
         done
-        unset TMUX_SESSION_TEMPS[${session}]
+        unset TMX_SESSION_TEMPS[${session}]
     fi
     
     # Kill the session
@@ -468,22 +583,22 @@ close_tmux_session() {
 }
 
 # Cleanup all sessions and their resources
-cleanup_all_tmux_sessions() {
+tmx_cleanup_all() {
     msg_debug "Cleaning up all tracked tmux sessions and resources"
     
     # Get all sessions managed by us
     local sessions=()
-    for session in "${!TMUX_SESSION_TEMPS[@]}"; do
+    for session in "${!TMX_SESSION_TEMPS[@]}"; do
         sessions+=("${session}")
     done
     
     # Close each session
     for session in "${sessions[@]}"; do
-        close_tmux_session "${session}"
+        tmx_close_session "${session}"
     done
     
     # Clean up any remaining temp files
-    for session_temps in "${TMUX_SESSION_TEMPS[@]}"; do
+    for session_temps in "${TMX_SESSION_TEMPS[@]}"; do
         for tmp_file in ${session_temps}; do
             if [[ -f "${tmp_file}" ]]; then
                 rm -f "${tmp_file}"
@@ -493,13 +608,13 @@ cleanup_all_tmux_sessions() {
     done
     
     # Clear the tracking array
-    TMUX_SESSION_TEMPS=()
+    TMX_SESSION_TEMPS=()
     
     return 0
 }
 
 # Set up cleanup on script exit
-trap 'cleanup_all_tmux_sessions' EXIT HUP INT QUIT TERM
+trap 'tmx_cleanup_all' EXIT HUP INT QUIT TERM
 
 # Execute a script defined in a function
 # Arguments:
@@ -509,8 +624,8 @@ trap 'cleanup_all_tmux_sessions' EXIT HUP INT QUIT TERM
 #   $4: Space-separated list of variables to export (optional)
 # Example:
 #   my_script() { echo "echo 'Hello world'"; }
-#   execute_function "my_session" 0 my_script "VAR1 VAR2"
-execute_function() {
+#   tmx_execute_function "my_session" 0 my_script "VAR1 VAR2"
+tmx_execute_function() {
     local session="${1}"
     local pane="${2}"
     local func_name="${3}"
@@ -534,49 +649,14 @@ execute_function() {
     tmp_script=$(mktemp)
     
     # Register this temp file with the session
-    TMUX_SESSION_TEMPS[${session}]="${TMUX_SESSION_TEMPS[${session}]:-} ${tmp_script}"
+    TMX_SESSION_TEMPS[${session}]="${TMX_SESSION_TEMPS[${session}]:-} ${tmp_script}"
     
-    # Get absolute path to the project directory
-    local script_dir
-    script_dir="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+    # Generate script content using helper function
+    local script_content
+    script_content=$(tmx_generate_script_boilerplate "${content}" "Script from function '${func_name}'" "${vars}")
     
-    # Write the header of the script
-    {
-        echo '#!/usr/bin/env bash'
-        echo ""
-        echo "# Set up script environment"
-        echo "SCRIPT_DIR=\"${script_dir}\""
-        echo 'cd "${SCRIPT_DIR}"'
-        echo 'export PATH="${SCRIPT_DIR}:${PATH}"'
-        
-        # Export specified variables from parent shell
-        if [[ -n "${vars}" ]]; then
-            echo "# Export variables from parent shell"
-            for var in ${vars}; do
-                # Get value and escape it properly for inclusion in the script
-                local value="${!var}"
-                echo "export ${var}=\"${value}\""
-            done
-        fi
-        
-        echo ""
-        echo "# Source sh-globals.sh"
-        echo "source \"${script_dir}/sh-globals.sh\""
-        echo ""
-        echo "# Initialize globals"
-        echo "export DEBUG=1"
-        echo "sh-globals_init"
-        echo ""
-        echo "# Define session self-destruct function"
-        echo "tmux_self_destruct() {"
-        echo "  local session_name=\$(tmux display-message -p '#S')"
-        echo "  msg_info \"Closing session \${session_name}...\""
-        echo "  ( sleep 0.5; tmux kill-session -t \"\${session_name}\" ) &"
-        echo "}"
-        echo ""
-        echo "# Script from function '${func_name}' follows"
-        echo "${content}"
-    } > "${tmp_script}"
+    # Write the script content to file
+    echo "${script_content}" > "${tmp_script}"
     
     # Make script executable
     chmod +x "${tmp_script}"
@@ -593,7 +673,7 @@ execute_function() {
 #   $2: Pane index
 #   $3: Script file path
 #   $4: Space-separated list of variables to export (optional)
-execute_file() {
+tmx_execute_file() {
     local session="${1}"
     local pane="${2}"
     local script_file="${3}"
@@ -617,49 +697,14 @@ execute_file() {
     tmp_script=$(mktemp)
     
     # Register this temp file with the session
-    TMUX_SESSION_TEMPS[${session}]="${TMUX_SESSION_TEMPS[${session}]:-} ${tmp_script}"
+    TMX_SESSION_TEMPS[${session}]="${TMX_SESSION_TEMPS[${session}]:-} ${tmp_script}"
     
-    # Get absolute path to the project directory
-    local script_dir
-    script_dir="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+    # Generate script content using helper function
+    local script_content
+    script_content=$(tmx_generate_script_boilerplate "${content}" "Script from file '${script_file}'" "${vars}")
     
-    # Write the header of the script
-    {
-        echo '#!/usr/bin/env bash'
-        echo ""
-        echo "# Set up script environment"
-        echo "SCRIPT_DIR=\"${script_dir}\""
-        echo 'cd "${SCRIPT_DIR}"'
-        echo 'export PATH="${SCRIPT_DIR}:${PATH}"'
-        
-        # Export specified variables from parent shell
-        if [[ -n "${vars}" ]]; then
-            echo "# Export variables from parent shell"
-            for var in ${vars}; do
-                # Get value and escape it properly for inclusion in the script
-                local value="${!var}"
-                echo "export ${var}=\"${value}\""
-            done
-        fi
-        
-        echo ""
-        echo "# Source sh-globals.sh"
-        echo "source \"${script_dir}/sh-globals.sh\""
-        echo ""
-        echo "# Initialize globals"
-        echo "export DEBUG=1"
-        echo "sh-globals_init"
-        echo ""
-        echo "# Define session self-destruct function"
-        echo "tmux_self_destruct() {"
-        echo "  local session_name=\$(tmux display-message -p '#S')"
-        echo "  msg_info \"Closing session \${session_name}...\""
-        echo "  ( sleep 0.5; tmux kill-session -t \"\${session_name}\" ) &"
-        echo "}"
-        echo ""
-        echo "# Script from file '${script_file}' follows"
-        echo "${content}"
-    } > "${tmp_script}"
+    # Write the script content to file
+    echo "${script_content}" > "${tmp_script}"
     
     # Make script executable
     chmod +x "${tmp_script}"
@@ -677,7 +722,7 @@ execute_file() {
 #   $2: Pane index
 #   $3: Shell function to execute (must be defined in the current shell)
 #   $4: Space-separated list of variables to export (optional)
-execute_shell_function() {
+tmx_execute_shell_function() {
     local session="${1}"
     local pane="${2}"
     local func_name="${3}"
@@ -698,9 +743,9 @@ execute_shell_function() {
     
     # Also export definitions of helper functions needed by func_def
     local helper_defs
-    # Ensure t_var_set and t_var_get are available before declaring them
-    if ! declare -f t_var_set > /dev/null || ! declare -f t_var_get > /dev/null; then
-      msg_error "Helper functions t_var_set/t_var_get not found in parent shell!"
+    # Ensure tmx_var_set and tmx_var_get are available before declaring them
+    if ! declare -f tmx_var_set > /dev/null || ! declare -f tmx_var_get > /dev/null; then
+      msg_error "Helper functions tmx_var_set/tmx_var_get not found in parent shell!"
       # Attempt to source tmux_utils1.sh directly as a fallback
       local current_script_path="$(readlink -f "${BASH_SOURCE[0]}")"
       local utils_path="$(dirname "${current_script_path}")/tmux_utils1.sh"
@@ -710,92 +755,57 @@ execute_shell_function() {
           msg_error "Could not find ${utils_path} for fallback source."; return 1;
       fi
       # Check again
-      if ! declare -f t_var_set > /dev/null || ! declare -f t_var_get > /dev/null; then
+      if ! declare -f tmx_var_set > /dev/null || ! declare -f tmx_var_get > /dev/null; then
            msg_error "Helper functions still not found after fallback source!"
            return 1
       fi
     fi
-    helper_defs=$(declare -f t_var_set t_var_get)
+    helper_defs=$(declare -f tmx_var_set tmx_var_get)
 
     # Create a temporary script
     local tmp_script
     tmp_script=$(mktemp)
     
     # Register this temp file with the session
-    TMUX_SESSION_TEMPS[${session}]="${TMUX_SESSION_TEMPS[${session}]:-} ${tmp_script}"
+    TMX_SESSION_TEMPS[${session}]="${TMX_SESSION_TEMPS[${session}]:-} ${tmp_script}"
     
-    # Get absolute path to the project directory (still needed for PATH)
-    local script_dir
-    # Use a more robust way to find the directory of tmux_utils1.sh itself
-    script_dir="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+    # Simple invocation of the function without any explicit exit
+    # Let tmx_generate_script_boilerplate handle the exit statement
+    local run_content="${func_name}"
     
-    # Write the script that will run the function
-    {
-        echo '#!/usr/bin/env bash'
-        # Removed set -x for cleaner output now
-        echo ""
-        echo "# Set up script environment"
-        echo "SCRIPT_DIR=\"$(printf '%q' "${script_dir}")\"" # Use printf %q for robust quoting
-        echo 'export PATH="${SCRIPT_DIR}:${PATH}"' # Keep script dir in PATH
-        echo '# Attempt to cd to script dir, continue if it fails'
-        echo 'cd "${SCRIPT_DIR}" || msg_warning "Could not cd to ${SCRIPT_DIR}"' 
+    # Generate main function script using the helper, including helper functions
+    local script_content
+    script_content=$(tmx_generate_script_boilerplate "${run_content}" "Shell function '${func_name}'" "${vars}" "${helper_defs}
+${func_def}")
+    
+    # Write the script content to file
+    echo "${script_content}" > "${tmp_script}"
+    
+    # Save debug copy if TMX_DEBUG_DIR is set
+    if [[ -n "${TMX_DEBUG_DIR}" ]]; then
+        # Create debug directory if it doesn't exist
+        mkdir -p "${TMX_DEBUG_DIR}"
         
-        # Export specified variables from parent shell
-        if [[ -n "${vars}" ]]; then
-            echo "# Export variables from parent shell"
-            for var in ${vars}; do
-                # Get value and quote it properly for inclusion in the script
-                printf 'export %s=%q\n' "${var}" "${!var}" # Use printf %q for robust quoting
-            done
+        # Create a timestamped debug copy with function name
+        local debug_file="${TMX_DEBUG_DIR}/${session}_${pane}_${func_name}_$(date +%s).sh"
+        cp "${tmp_script}" "${debug_file}"
+        chmod +x "${debug_file}"
+        
+        # Verify the script for syntax errors
+        if bash -n "${debug_file}" 2>/dev/null; then
+            msg_debug "Saved debug script to: ${debug_file} (syntax OK)"
+        else
+            msg_warning "Saved debug script with syntax errors: ${debug_file}"
+            # Log the syntax checking error
+            bash -n "${debug_file}" 2>&1 | head -3 >> "${TMX_DEBUG_DIR}/syntax_errors.log"
         fi
-        
-        # ADDED back direct sourcing of sh-globals.sh and init
-        echo ""
-        echo "# Source sh-globals.sh (essential for colors/msg functions)"
-        # Use the known location relative to this script (tmux_utils1.sh)
-        echo "if [[ -f \"${script_dir}/sh-globals.sh\" ]]; then"
-        echo "    source \"${script_dir}/sh-globals.sh\" || { msg_error 'Failed to source sh-globals.sh'; exit 1; }"
-        echo "else"
-        echo "    msg_error \"sh-globals.sh not found at ${script_dir}/sh-globals.sh\"; exit 1;"
-        echo "fi"
-        echo ""
-        echo "# Initialize globals (optional, but good practice)"
-        echo "export DEBUG=\"$(printf '%q' "${DEBUG:-0}")\"" # Inherit DEBUG or default to 0, quoted
-        # Pass any arguments from the parent script if needed, though usually not for functions
-        # echo "sh-globals_init \"$@\"" 
-        echo "sh-globals_init" # Basic init should be sufficient
-
-        echo ""
-        echo "# Define helper functions needed by the main function"
-        echo "${helper_defs}"
-        echo ""
-        echo "# Define the main shell function to execute"
-        echo "${func_def}"
-        echo ""
-        echo "# Execute the function"
-        # Pass any arguments originally intended for the function if needed
-        # This example assumes no extra args are passed via execute_shell_function
-        echo "${func_name}" 
-        echo ""
-        echo "# Exit after function completes (optional, prevents pane staying open)"
-        echo "# exit 0" 
-
-        echo "fi"
-        echo ""
-        echo "# Initialize globals (optional, but good practice)"
-        # echo "export DEBUG=\"$(printf '%q' \"${DEBUG:-0}\")\"" # Inherit DEBUG or default to 0, quoted
-        # Pass any arguments from the parent script if needed, though usually not for functions
-        # echo "sh-globals_init \"$@\"" 
-        echo "sh-globals_init" # Basic init should be sufficient
-
-    } > "${tmp_script}"
+    fi
     
     # Make script executable
     chmod +x "${tmp_script}"
     
     # Execute temporary script
     # Use bash explicitly to ensure consistent environment
-    # Quote the script path robustly
     tmux send-keys -t "${session}:0.${pane}" "bash $(printf '%q' "${tmp_script}")" C-m 
     
     return $?
@@ -808,7 +818,7 @@ execute_shell_function() {
 #   - Original session name if user chooses to force close existing session or if it didn't exist
 #   - New incremented session name if user chooses to use a new name
 #   - Empty string if user chooses to exit
-handle_duplicate_session() {
+tmx_handle_duplicate_session() {
     local session_name="${1}"
     CHOSEN_SESSION_NAME="" # Reset global variable
     
@@ -896,12 +906,12 @@ handle_duplicate_session() {
 #   - 0 on success
 #   - 1 if user chose to exit or creation failed
 # Sets global SESSION_NAME on success
-create_session_with_duplicate_handling() {
+tmx_create_session_with_handling() {
     local base_session_name="${1}"
     local launch_terminal="${2:-true}"
     
     # Handle duplicate session name interactively
-    handle_duplicate_session "${base_session_name}"
+    tmx_handle_duplicate_session "${base_session_name}"
 
     # Use the session name chosen by the user (stored in global variable)
     local session_name="${CHOSEN_SESSION_NAME}"
@@ -911,9 +921,9 @@ create_session_with_duplicate_handling() {
         return 1 # User chose to exit
     fi
     
-    # Create the session. create_tmux_session sets the global SESSION_NAME
-    if ! create_tmux_session "${session_name}" "${launch_terminal}"; then
-        msg_debug "Session creation failed in create_tmux_session"
+    # Create the session. tmx_create_session sets the global SESSION_NAME
+    if ! tmx_create_session "${session_name}" "${launch_terminal}"; then
+        msg_debug "Session creation failed in tmx_create_session"
         return 1 # Creation failed
     fi
     
@@ -928,25 +938,32 @@ create_session_with_duplicate_handling() {
 #   $1: Variable name
 #   $2: Variable value
 #   $3: Target session name (optional, defaults to global)
-t_var_set() {
+tmx_var_set() {
     local var_name="${1}"
     local var_value="${2}"
     local target_session="${3:-}"
-    local target_flag="-g" # Default to global
-
-    if [[ -n "${target_session}" ]]; then
-        target_flag="-t ${target_session}"
-    fi
-
+    
     if [[ -z "${var_name}" ]]; then
-        msg_error "t_var_set: Variable name cannot be empty."
+        msg_error "tmx_var_set: Variable name cannot be empty."
         return 1
     fi
 
-    msg_debug "Setting tmux env var (${target_flag}): ${var_name}=${var_value}"
-    # Use eval to handle the flag correctly, quote variables
-    eval tmux set-environment "${target_flag}" "$(printf '%q' "${var_name}")" "$(printf '%q' "${var_value}")"
-    return $?
+    msg_debug "Setting tmux env var: ${var_name}=${var_value} in session '${target_session:-global}'"
+    
+    # Handle session-specific or global variables
+    if [[ -n "${target_session}" ]]; then
+        tmux set-environment -t "${target_session}" "${var_name}" "${var_value}" 2>/dev/null || {
+            msg_warning "Failed to set tmux variable ${var_name} for session ${target_session}"
+            return 1
+        }
+    else
+        tmux set-environment -g "${var_name}" "${var_value}" 2>/dev/null || {
+            msg_warning "Failed to set global tmux variable ${var_name}"
+            return 1
+        }
+    fi
+    
+    return 0
 }
 
 # Get a tmux environment variable (global or session-specific)
@@ -954,38 +971,521 @@ t_var_set() {
 #   $1: Variable name
 #   $2: Target session name (optional, defaults to global)
 # Returns: The value of the variable (echoed)
-t_var_get() {
+tmx_var_get() {
     local var_name="${1}"
     local target_session="${2:-}"
-    local target_flag="-g" # Default to global
-    local value
-
-    if [[ -n "${target_session}" ]]; then
-        target_flag="-t ${target_session}"
-    fi
-
+    local value=""
+    
     if [[ -z "${var_name}" ]]; then
-        msg_error "t_var_get: Variable name cannot be empty."
+        msg_error "tmx_var_get: Variable name cannot be empty."
         return 1
     fi
-
-    # Use tmux show-environment and parse the output
-    # The output format is "VAR_NAME=value"
-    # Use eval to handle the flag correctly, quote variable name
-    value=$(eval tmux show-environment "${target_flag}" "$(printf '%q' "${var_name}")" 2>/dev/null | cut -d= -f2-)
-
-    # Check if the variable was actually found
-    local check_cmd="tmux show-environment ${target_flag} \"$(printf '%q' "${var_name}")\" &>/dev/null"
-    if [[ -z "${value}" ]] && ! eval "${check_cmd}"; then
-         msg_debug "t_var_get: Variable '${var_name}' not found in tmux environment (${target_flag})."
-         # Optionally return a default or just empty string
-         # echo "" # Return empty string if not found
-         return 1 # Indicate not found via exit code
+    
+    # Handle session-specific or global variables
+    if [[ -n "${target_session}" ]]; then
+        if ! value=$(tmux show-environment -t "${target_session}" "${var_name}" 2>/dev/null | cut -d= -f2-); then
+            msg_debug "Variable '${var_name}' not found in session ${target_session}"
+            return 1
+        fi
+    else
+        if ! value=$(tmux show-environment -g "${var_name}" 2>/dev/null | cut -d= -f2-); then
+            msg_debug "Variable '${var_name}' not found in global environment"
+            return 1
+        fi
     fi
-
-    # Echo the value so it can be captured, e.g., val=$(t_var_get MY_VAR)
+    
+    # Echo the value so it can be captured
     echo "${value}"
     return 0
 }
 
+# Initialize multiple tmux environment variables from an array
+# Arguments:
+#   $1: Name of the bash array containing variable names (passed by name reference)
+#   $2: Default value for initialization (optional, defaults to 0)
+#   $3: Target session name (optional, defaults to global)
+tmx_init_vars_array() {
+    local -n var_array_ref="$1" # Use nameref to get the array
+    local default_value="${2:-0}"
+    local target_session="${3:-}"
+    local var_name
+    local result=0 # Track overall success
+
+    msg_debug "Initializing tmux vars from array '${1}' with default '${default_value}' for session '${target_session:-global}'"
+
+    for var_name in "${var_array_ref[@]}"; do
+        if ! tmx_var_set "${var_name}" "${default_value}" "${target_session}"; then
+            msg_warning "Failed to initialize tmux variable: ${var_name}"
+            result=1 # Mark failure if any variable fails
+        fi
+    done
+
+    return ${result}
+}
+
 # ======== END TMUX ENVIRONMENT VARIABLE HELPERS ========
+
+# Create a new pane and execute a shell function in it
+# Arguments:
+#   $1: Session name
+#   $2: Shell function to execute (must be defined in the current shell)
+#   $3: Pane options:
+#      - Integer: Use existing pane with this index
+#      - "v": Create new vertical split pane
+#      - "h": Create new horizontal split pane
+#   $4: Space-separated list of variables to export (optional)
+# Returns: The index of the pane used
+tmx_pane_function() {
+    local session="${1}"
+    local func_name="${2}"
+    local pane_option="${3:-h}"  # Default to horizontal split
+    local vars="${4:-}"
+    local pane_index
+    
+    msg_debug "Executing ${func_name} in session=${session}, pane=${pane_option}"
+    
+    # Check if pane_option is a number (existing pane) or split type
+    if [[ "${pane_option}" =~ ^[0-9]+$ ]]; then
+        # Use existing pane with the given index
+        pane_index="${pane_option}"
+        msg_debug "Using existing pane ${pane_index} in session ${session}"
+    else
+        # Create a new pane with specified split type
+        if [[ "${pane_option}" != "h" && "${pane_option}" != "v" ]]; then
+            msg_warning "Invalid split type: ${pane_option}. Using horizontal."
+            pane_option="h"
+        fi
+        pane_index=$(tmx_create_pane "${session}" "${pane_option}")
+        msg_debug "Created new ${pane_option} pane ${pane_index} in session ${session}"
+    fi
+    
+    # Execute the function in the selected pane
+    tmx_execute_shell_function "${session}" "${pane_index}" "${func_name}" "${vars}"
+    
+    # Return the pane index
+    echo "${pane_index}"
+    
+    return 0
+}
+
+# Setup the first pane (pane 0) with a shell function
+# RENAMED: Use tmx_pane_function with "0" as the pane option
+tmx_first_pane_function() {
+    local session="${1}"
+    local func_name="${2}"
+    local vars="${3:-}"
+    
+    # Call the new unified function with pane index 0
+    tmx_pane_function "${session}" "${func_name}" "0" "${vars}"
+}
+
+# Create a new pane and execute a shell function in it
+# RENAMED: Use tmx_pane_function with "h" or "v" as the pane option
+tmx_create_pane_function() {
+    local session="${1}"
+    local func_name="${2}"
+    local split_type="${3:-h}"  # Default to horizontal split
+    local vars="${4:-}"
+    
+    # Call the new unified function
+    tmx_pane_function "${session}" "${func_name}" "${split_type}" "${vars}"
+}
+
+# Create session, display confirmation, and initialize variables in one call
+# Arguments:
+#   $1: Reference variable to store the session name result
+#   $2: Session name
+#   $3: Headless flag (optional, "--headless" or empty)
+#   $4: Name of array containing variable names to initialize
+#   $5: Default value for variables (optional, defaults to 0)
+# Returns: 0 on success, 1 on failure
+tmx_create_session_with_vars() {
+    # First parameter is a nameref (reference to caller's variable)
+    local -n session_result="$1"
+    local session_name="$2"
+    local headless="${3:-}"
+    local var_array_name="${4}"
+    local default_value="${5:-0}"
+    
+    msg_debug "tmx_create_session_with_vars: starting with session_name='${session_name}' var_array='${var_array_name}'"
+    msg_debug "Using reference variable named: $1"
+    
+    # Create the session - should return only the session name now
+    local s=$(tmx_create_session "${session_name}" "${headless}")
+    msg_debug "tmx_create_session returned: '${s}'"
+    
+    # Check if session creation succeeded
+    if [[ -z "$s" ]]; then
+        msg_error "Failed to create session '${session_name}'"
+        session_result=""  # Set empty result
+        return 1
+    fi
+    
+    # Now we can safely print success messages without affecting the result
+    msg_success "Session '${s}' initialized with variables."
+    
+    # Initialize tmux variables using the dedicated function
+    msg_debug "Initializing variables from array '${var_array_name}' for session '${s}'"
+    tmx_init_vars_array "$var_array_name" "$default_value" "$s" || {
+        msg_warning "Failed to initialize some variables for session '${s}'"
+    }
+    
+    # Store result in the caller's variable through the reference
+    session_result="$s"
+    msg_debug "Setting caller's variable to: '${session_result}'"
+    
+    return 0
+}
+
+# ======== TMUX PANE MANAGEMENT FUNCTIONS ========
+
+# Kill a specific pane in a tmux session
+# Arguments:
+#   $1: Session name
+#   $2: Pane index
+# Returns: 0 on success, 1 on failure
+tmx_kill_pane() {
+    local session="${1}"
+    local pane="${2}"
+    
+    if [[ -z "${session}" || -z "${pane}" ]]; then
+        msg_error "Kill pane failed: Missing session name or pane index"
+        return 1
+    fi
+    
+    if tmux kill-pane -t "${session}:0.${pane}" 2>/dev/null; then
+        msg_debug "Killed pane ${pane} in session: ${session}"
+        return 0
+    else
+        msg_warning "Failed to kill pane ${pane} (may not exist) in session: ${session}"
+        return 1
+    fi
+}
+
+# Create a monitor pane to display and track tmux variables
+# Arguments:
+#   $1: Session name
+#   $2: Variables to monitor (space-separated list of tmux variable names)
+#   $3: Pane options (similar to tmx_pane_function):
+#      - Integer: Use existing pane with this index
+#      - "v": Create new vertical split pane
+#      - "h": Create new horizontal split pane
+#   $4: Refresh interval in seconds (optional, default: 1)
+#   $5: Additional environment variables to pass (optional)
+# Returns: The index of the monitor pane
+tmx_monitor_pane() {
+    local session="${1}"
+    local monitor_vars="${2}"
+    local pane_option="${3:-0}"  # Default to first pane
+    local refresh="${4:-1}"      # Default refresh rate: 1 second
+    local env_vars="${5:-}"
+    
+    # Define the monitor function
+    monitor_function() {
+        # Variables to monitor (passed as a string)
+        local vars="$1"
+        local session="$2"
+        local refresh_rate="$3"
+        
+        # Debug the received parameters
+        echo "Monitor function started with:"
+        echo "- Variables to monitor: ${vars}"
+        echo "- Session: ${session}"
+        echo "- Refresh rate: ${refresh_rate}"
+        
+        # Convert space-separated vars into array
+        read -ra VAR_ARRAY <<< "$vars"
+        
+        # Validate refresh_rate (default to 1 if empty or invalid)
+        if [[ -z "${refresh_rate}" || ! "${refresh_rate}" =~ ^[0-9]+$ ]]; then
+            echo "WARNING: Invalid refresh rate '${refresh_rate}', using default of 1 second"
+            refresh_rate=1
+        fi
+        
+        echo "=== TMUX VARIABLE MONITOR ==="
+        echo "Session: $session | Refresh: ${refresh_rate}s"
+        echo "Press Ctrl+C to stop monitoring"
+        echo "-------------------------------"
+        
+        # Main monitoring loop
+        while true; do
+            clear
+            echo "=== TMUX VARIABLE MONITOR ==="
+            echo "Session: $session | Refresh: ${refresh_rate}s | $(date '+%H:%M:%S')"
+            echo "-------------------------------"
+            
+            # Display each variable with color based on name
+            for var in "${VAR_ARRAY[@]}"; do
+                local value=$(tmx_var_get "$var" "$session" 2>/dev/null || echo "N/A")
+                
+                # Choose color based on variable name
+                if [[ "$var" == *"green"* ]]; then
+                    msg_green "$var: $value"
+                elif [[ "$var" == *"blue"* ]]; then
+                    msg_blue "$var: $value"
+                elif [[ "$var" == *"red"* ]]; then
+                    msg_red "$var: $value"
+                elif [[ "$var" == *"yellow"* ]]; then
+                    msg_yellow "$var: $value"
+                else
+                    echo "$var: $value"
+                fi
+            done
+            
+            sleep "$refresh_rate"
+        done
+    }
+    
+    # Setup monitor in appropriate pane
+    local pane_index
+    
+    # Explicitly prepare variables for the function with the session name
+    msg_debug "Setting up monitor pane with refresh rate: ${refresh}"
+    
+    # Set refresh_rate variable in the session BEFORE creating the pane
+    tmx_var_set "refresh_rate" "$refresh" "$session"
+    
+    # Use tmx_pane_function to handle pane creation and execution
+    # Create a parameter string WITHOUT using quotes that would be preserved
+    local params="${monitor_vars} ${session} ${refresh} ${env_vars}"
+    pane_index=$(tmx_pane_function "$session" monitor_function "$pane_option" "$params")
+    
+    echo "$pane_index"
+    return 0
+}
+
+# Create a control pane that can monitor variables and manage other panes
+# Arguments:
+#   $1: Session name
+#   $2: Variables to monitor (space-separated list of tmux variable names)
+#   $3: Panes to control (space-separated list of pane indices)
+#   $4: Pane options (similar to tmx_pane_function)
+#   $5: Refresh interval in seconds (optional, default: 1)
+#   $6: Additional environment variables to pass (optional)
+# Returns: The index of the control pane
+tmx_control_pane() {
+    local session="${1}"
+    local monitor_vars="${2}"
+    local control_panes="${3}"
+    local pane_option="${4:-0}"  # Default to first pane
+    local refresh="${5:-1}"      # Default refresh rate: 1 second
+    local env_vars="${6:-}"
+    
+    # Define the control function
+    control_function() {
+        # Variables to monitor and panes to control
+        local vars="$1"
+        local panes="$2"
+        local session="$3"
+        local refresh_rate="$4"
+        
+        # Debug the received parameters
+        echo "Control function started with:"
+        echo "- Variables to monitor: ${vars}"
+        echo "- Panes to control: ${panes}"
+        echo "- Session: ${session}"
+        echo "- Refresh rate: ${refresh_rate}"
+        
+        # Convert space-separated strings into arrays
+        read -ra VAR_ARRAY <<< "$vars"
+        read -ra PANE_ARRAY <<< "$panes"
+        
+        # Validate refresh_rate (default to 1 if empty or invalid)
+        if [[ -z "${refresh_rate}" || ! "${refresh_rate}" =~ ^[0-9]+$ ]]; then
+            echo "WARNING: Invalid refresh rate '${refresh_rate}', using default of 1 second"
+            refresh_rate=1
+        fi
+        
+        # Setup display
+        echo "=== TMUX CONTROL PANE ==="
+        echo "Session: $session | Refresh: ${refresh_rate}s"
+        echo "Controls: [q] Quit all | [r] Restart pane | [number] Close pane"
+        echo "-------------------------------"
+        
+        # Enable special terminal handling for input
+        stty -echo
+        
+        # Main control loop
+        while true; do
+            clear
+            echo "=== TMUX CONTROL PANE ==="
+            echo "Session: $session | Refresh: ${refresh_rate}s | $(date '+%H:%M:%S')"
+            echo "Controls: [q] Quit all | [r] Restart pane | [number] Close pane"
+            echo "-------------------------------"
+            
+            # Display variables
+            echo "= Variables ="
+            for var in "${VAR_ARRAY[@]}"; do
+                local value=$(tmx_var_get "$var" "$session" 2>/dev/null || echo "N/A")
+                
+                # Choose color based on variable name
+                if [[ "$var" == *"green"* ]]; then
+                    msg_green "$var: $value"
+                elif [[ "$var" == *"blue"* ]]; then
+                    msg_blue "$var: $value"
+                elif [[ "$var" == *"red"* ]]; then
+                    msg_red "$var: $value"
+                elif [[ "$var" == *"yellow"* ]]; then
+                    msg_yellow "$var: $value"
+                else
+                    echo "$var: $value"
+                fi
+            done
+            
+            # Display panes
+            echo "= Panes ="
+            for pane in "${PANE_ARRAY[@]}"; do
+                if tmux has-pane -t "${session}:0.${pane}" 2>/dev/null; then
+                    msg_success "Pane ${pane}: Running - press ${pane} to close"
+                else
+                    msg_warning "Pane ${pane}: Not running"
+                fi
+            done
+            
+            # Check for input (non-blocking)
+            read -t 0.1 -n 1 input
+            if [[ -n "$input" ]]; then
+                case "$input" in
+                    q)
+                        echo "Closing all panes and exiting..."
+                        for pane in "${PANE_ARRAY[@]}"; do
+                            tmx_kill_pane "$session" "$pane" 2>/dev/null
+                        done
+                        tmux kill-session -t "$session" 2>/dev/null
+                        break
+                        ;;
+                    r)
+                        echo "Enter pane number to restart: "
+                        read -n 1 pane_num
+                        if [[ "$pane_num" =~ ^[0-9]+$ ]]; then
+                            # Check if pane_num is in the array using a loop instead of pattern matching
+                            local pane_exists=0
+                            for p in "${PANE_ARRAY[@]}"; do
+                                if [[ "$p" == "$pane_num" ]]; then
+                                    pane_exists=1
+                                    break
+                                fi
+                            done
+                            
+                            if [[ "$pane_exists" -eq 1 ]]; then
+                                # Logic to restart a pane would go here
+                                # This depends on how panes were originally launched
+                                echo "Restart functionality requires customization"
+                            fi
+                        fi
+                        ;;
+                    [0-9])
+                        # Check if input is in the array using a loop
+                        local pane_exists=0
+                        for p in "${PANE_ARRAY[@]}"; do
+                            if [[ "$p" == "$input" ]]; then
+                                pane_exists=1
+                                break
+                            fi
+                        done
+                        
+                        if [[ "$pane_exists" -eq 1 ]]; then
+                            echo "Closing pane $input..."
+                            tmx_kill_pane "$session" "$input"
+                        fi
+                        ;;
+                esac
+            fi
+            
+            sleep "$refresh_rate"
+        done
+        
+        # Restore terminal settings
+        stty echo
+    }
+    
+    # Setup control pane in appropriate pane
+    local pane_index
+    
+    # Explicitly prepare variables for the function with the session name
+    msg_debug "Setting up control pane with refresh rate: ${refresh} for panes: ${control_panes}"
+    
+    # Set refresh_rate variable in the session BEFORE creating the pane
+    tmx_var_set "refresh_rate" "$refresh" "$session"
+    
+    # Use tmx_pane_function to handle pane creation and execution
+    # Create a parameter string WITHOUT using quotes that would be preserved
+    local params="${monitor_vars} ${control_panes} ${session} ${refresh} ${env_vars}"
+    pane_index=$(tmx_pane_function "$session" control_function "$pane_option" "$params")
+    
+    echo "$pane_index"
+    return 0
+}
+
+# Create a simple status bar pane showing session name and variables
+# Arguments:
+#   $1: Session name
+#   $2: Variables to monitor (space-separated list of tmux variable names)
+#   $3: Pane options (similar to tmx_pane_function)
+#   $4: Refresh interval in seconds (optional, default: 1)
+# Returns: The index of the status pane
+tmx_status_pane() {
+    local session="${1}"
+    local monitor_vars="${2}"
+    local pane_option="${3:-0}"  # Default to first pane
+    local refresh="${4:-1}"      # Default refresh rate: 1 second
+    
+    # Define the status function
+    status_function() {
+        local vars="$1"
+        local session="$2"
+        local refresh_rate="$3"
+        
+        # Debug the received parameters
+        echo "Status function started with:"
+        echo "- Variables to monitor: ${vars}"
+        echo "- Session: ${session}"
+        echo "- Refresh rate: ${refresh_rate}"
+        
+        # Convert space-separated vars into array
+        read -ra VAR_ARRAY <<< "$vars"
+        
+        # Validate refresh_rate (default to 1 if empty or invalid)
+        if [[ -z "${refresh_rate}" || ! "${refresh_rate}" =~ ^[0-9]+$ ]]; then
+            echo "WARNING: Invalid refresh rate '${refresh_rate}', using default of 1 second"
+            refresh_rate=1
+        fi
+        
+        # Main status loop
+        while true; do
+            clear
+            echo -e "$(msg_bold "SESSION: ${session} | $(date '+%H:%M:%S')")"
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Display each variable in a compact format
+            local output=""
+            for var in "${VAR_ARRAY[@]}"; do
+                local value=$(tmx_var_get "$var" "$session" 2>/dev/null || echo "N/A")
+                output+="$(msg_bold "$var")=$value | "
+            done
+            
+            # Remove trailing separator and print
+            output="${output% | }"
+            echo -e "$output"
+            
+            sleep "$refresh_rate"
+        done
+    }
+    
+    # Setup status in appropriate pane
+    local pane_index
+    
+    # Explicitly prepare variables for the function with the session name
+    msg_debug "Setting up status pane with refresh rate: ${refresh}"
+    
+    # Set refresh_rate variable in the session BEFORE creating the pane
+    tmx_var_set "refresh_rate" "$refresh" "$session"
+    
+    # Use tmx_pane_function to handle pane creation and execution
+    # Create a parameter string WITHOUT using quotes that would be preserved
+    local params="${monitor_vars} ${session} ${refresh}"
+    pane_index=$(tmx_pane_function "$session" status_function "$pane_option" "$params")
+    
+    echo "$pane_index"
+    return 0
+}

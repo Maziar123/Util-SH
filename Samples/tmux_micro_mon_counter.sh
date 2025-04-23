@@ -1,26 +1,21 @@
 #!/usr/bin/env bash
 # ===================================================================
-# tmux_micro_var_counter.sh - Minimal tmux variable sharing demonstration
+# tmux_micro_mon_counter.sh - Minimal tmux variable monitoring demo
 # ===================================================================
 # DESCRIPTION:
-#   Ultra-minimal example of variable sharing between tmux panes using
-#   tmux variables instead of files. Shows how to create a tmux session
-#   with three panes:
-#     1. Monitor pane - Shows the value of both counters
+#   Ultra-minimal example of variable monitoring using the new tmx_monitor_pane
+#   function. Shows how to create a tmux session with three panes:
+#     1. Monitor pane - Shows the value of all counters with auto-coloring
 #     2. Green counter - Increments by 2 every second
 #     3. Blue counter - Increments by 3 every 2 seconds
 #
 # USAGE:
-#   ./tmux_micro_var_counter.sh [--headless]
+#   ./tmux_micro_mon_counter.sh [--headless]
 #   Options:
 #     --headless    Create session without launching a terminal
 #
 #   For debugging scripts:
-#     DEBUG=1 ./tmux_micro_var_counter.sh
-#     This will automatically save copies of all pane scripts to ./tmux_debug_scripts/
-#
-#     # Or specify a custom debug directory:
-#     TMX_DEBUG_DIR=./my_debug_dir DEBUG=1 ./tmux_micro_var_counter.sh
+#     DEBUG=1 ./tmux_micro_mon_counter.sh
 #
 # NOTE: Uses tmux variables that are automatically cleaned up when session ends.
 # ===================================================================
@@ -37,25 +32,11 @@ HEADLESS='' # Default to not headless
 if [[ "$1" = "--headless" ]]; then
     HEADLESS=$1
 fi
-# Note: This only checks the first argument ($1).
-# Other arguments or --headless in other positions will be ignored.
 
 # === SHARED VARIABLES : Define the variables to be initialized
-COUNTER_VARS=("counter_green" "counter_blue")
+COUNTER_VARS=("counter_green" "counter_blue" "counter_red")
 
 # === PANE FUNCTIONS ===
-# Function for the monitor pane - displays both counters
-monitor() {
-    local session="$1"
-    while true; do
-        clear
-        echo "=== MONITOR ==="
-        msg_green "GREEN: $(tmx_var_get "counter_green" "$session")"
-        msg_blue "BLUE: $(tmx_var_get "counter_blue" "$session")"
-        sleep 1  # Update every second
-    done
-}
-
 # Function for the green counter pane
 green() {
     local session="$1"
@@ -64,7 +45,8 @@ green() {
         local v=$((current_green + 2))
         tmx_var_set "counter_green" "$v" "$session"
         clear
-        msg_bg_green "GREEN: ${v}"
+        msg_bg_green "GREEN COUNTER"
+        msg_green "Value: ${v}"
         sleep 1
     done
 }
@@ -74,46 +56,57 @@ blue() {
     local session="$1"
     # Infinite loop to update counter
     while true; do
-        # local v=$(($(tmux show-environment -t "$session" counter_blue | cut -d= -f2) + 3))
-        # tmux set-environment -t "$session" "counter_blue" "$v"
         local current_blue=$(tmx_var_get "counter_blue" "$session")
         local v=$((current_blue + 3))
         tmx_var_set "counter_blue" "$v" "$session"
         clear
-        msg_bg_blue "BLUE: ${v}"
+        msg_bg_blue "BLUE COUNTER"
+        msg_blue "Value: ${v}"
         sleep 2
+    done
+}
+
+# Function for the red counter pane
+red() {
+    local session="$1"
+    # Infinite loop to update counter
+    while true; do
+        local current_red=$(tmx_var_get "counter_red" "$session")
+        local v=$((current_red + 5))
+        tmx_var_set "counter_red" "$v" "$session"
+        clear
+        msg_bg_red "RED COUNTER"
+        msg_red "Value: ${v}"
+        sleep 3
     done
 }
 
 # === MAIN FUNCTION ===
 main() {
     # Create a new tmux session with unique timestamp to avoid duplicates
-    local session_name="micro_var_$(date +%s)"
+    local session_name="micro_mon_$(date +%s)"
     
     # Explicitly declare the session variable before using it with nameref
-    # This is important - the variable must exist before being used as a reference
     declare session_var=""
     
-    # Create the session, show confirmation box, and initialize variables - all in one call
-    # Now using the named reference approach instead of command substitution
+    # Create the session, show confirmation box, and initialize variables
     if ! tmx_create_session_with_vars session_var "${session_name}" "$HEADLESS" "COUNTER_VARS"; then
         msg_error "Failed to create tmux session, exiting."
         return 1
     fi
     
-    # Debug output to verify session_var contains the correct value
-    msg_debug "After function call, session_var='${session_var}'"
-    
     msg_info "Session created: ${session_var}"
     
-    # Start monitor in pane 0 (first pane)
-    p0=$(tmx_pane_function "${session_var}" monitor "0" "${session_var}")
-    
-    # Create pane 1 with vertical split and run green counter
+    # Create panes for counters first
+    msg_info "Creating counter panes..."
     p1=$(tmx_pane_function "${session_var}" green "v" "${session_var}")
-    
-    # Create pane 2 with horizontal split and run blue counter
     p2=$(tmx_pane_function "${session_var}" blue "h" "${session_var}")
+    p3=$(tmx_pane_function "${session_var}" red "h" "${session_var}")
+    
+    # Create monitor pane in pane 0 (first pane) last
+    # The monitor will auto-color variables based on their names
+    msg_info "Creating monitor pane..."
+    p0=$(tmx_monitor_pane "${session_var}" "counter_green counter_blue counter_red" "0" "1")
     
     # Keep parent process running
     echo "Running in: ${session_var} - Press Ctrl+C to exit"

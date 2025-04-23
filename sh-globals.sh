@@ -829,10 +829,10 @@ check_dependencies() {
 # Initialize the shell globals
 sh-globals_init() {
   # Set up trap handlers
-  setup_traps
+  #setup_traps
   
   # Enable various shell options
-  set -o pipefail  # Fail if any command in a pipeline fails
+  #set -o pipefail  # Fail if any command in a pipeline fails
   
   # Set default values for flags
   DEBUG=${DEBUG:-0}

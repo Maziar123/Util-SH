@@ -27,8 +27,8 @@ sh-globals_init "$@"
 # Function for the monitor pane - displays both counters
 monitor() {
     # Initialize variables if not set
-    t_var_set COUNT_GREEN 0
-    t_var_set COUNT_BLUE 0
+    tmx_var_set COUNT_GREEN 0
+    tmx_var_set COUNT_BLUE 0
     
     # Infinite loop to continuously update display
     while true; do
@@ -36,11 +36,11 @@ monitor() {
         echo "=== MONITOR ==="
         
         # Read green counter from tmux environment
-        green_value=$(t_var_get COUNT_GREEN)
+        green_value=$(tmx_var_get COUNT_GREEN)
         echo "GREEN: ${green_value}"
         
         # Read blue counter from tmux environment
-        blue_value=$(t_var_get COUNT_BLUE)
+        blue_value=$(tmx_var_get COUNT_BLUE)
         echo "BLUE: ${blue_value}"
         
         sleep 1  # Update every second
@@ -52,13 +52,13 @@ green() {
     # Infinite loop to update counter
     while true; do
         # Get current value from tmux environment
-        current=$(t_var_get COUNT_GREEN)
+        current=$(tmx_var_get COUNT_GREEN)
         
         # Increment by 2
         v=$((current + 2))
         
         # Update tmux environment variable
-        t_var_set COUNT_GREEN ${v}
+        tmx_var_set COUNT_GREEN ${v}
         
         clear
         msg_bg_green "GREEN: ${v}"  # Display with green background
@@ -71,13 +71,13 @@ blue() {
     # Infinite loop to update counter
     while true; do
         # Get current value from tmux environment
-        current=$(t_var_get COUNT_BLUE)
+        current=$(tmx_var_get COUNT_BLUE)
         
         # Increment by 3
         v=$((current + 3))
         
         # Update tmux environment variable
-        t_var_set COUNT_BLUE ${v}
+        tmx_var_set COUNT_BLUE ${v}
         
         clear
         msg_bg_blue "BLUE: ${v}"  # Display with blue background
@@ -88,22 +88,20 @@ blue() {
 # === MAIN FUNCTION ===
 main() {
     # Create a new tmux session with unique timestamp to avoid duplicates
-    s=$(create_tmux_session "tmux_var_$(date +%s)")
+    s=$(tmx_create_session "tmux_var_$(date +%s)")
     
     # Initialize tmux environment variables
-    t_var_set COUNT_GREEN 0
-    t_var_set COUNT_BLUE 0
+    tmx_var_set COUNT_GREEN 0
+    tmx_var_set COUNT_BLUE 0
     
     # Start monitor in pane 0 (first pane)
-    execute_shell_function "${s}" 0 monitor ""
+    p0=$(tmx_pane_function "${s}" monitor "0" "")
     
     # Create pane 1 with vertical split and run green counter
-    p1=$(create_new_pane "${s}" "v")
-    execute_shell_function "${s}" "${p1}" green ""
+    p1=$(tmx_pane_function "${s}" green "v" "")
     
     # Create pane 2 with horizontal split and run blue counter
-    p2=$(create_new_pane "${s}")
-    execute_shell_function "${s}" "${p2}" blue ""
+    p2=$(tmx_pane_function "${s}" blue "h" "")
     
     # Keep parent process running
     echo "Running in: ${s} - Press Ctrl+C to exit"

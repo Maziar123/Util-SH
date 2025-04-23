@@ -194,7 +194,7 @@ main() {
     # Create a new tmux session
     local session_name="var_share_demo_$$"
     
-    if ! create_session_with_duplicate_handling "${session_name}"; then
+    if ! tmx_create_session_with_handling "${session_name}"; then
         msg_error "Failed to create tmux session"
         return 1
     fi
@@ -205,33 +205,29 @@ main() {
     # Create panes for different sharing methods
     msg_info "Setting up demonstration panes..."
     
-    # Performance monitor in pane 0
-    execute_shell_function "${session_name}" 0 perf_monitor "SHARED_DIR"
+    # Performance monitor (top pane)
+    p0=$(tmx_pane_function "${session_name}" perf_monitor "0" "SHARED_DIR")
     
-    # File-based sharing (panes 1-2)
-    p1=$(create_new_pane "${session_name}" "v")
-    execute_shell_function "${session_name}" "${p1}" file_writer "SHARED_DIR"
+    # File sharing (left side, top half)
+    p1=$(tmx_pane_function "${session_name}" file_writer "v" "SHARED_DIR")
     
-    p2=$(create_new_pane "${session_name}" "h")
-    execute_shell_function "${session_name}" "${p2}" file_reader "SHARED_DIR"
+    # File sharing (left side, bottom half)
+    p2=$(tmx_pane_function "${session_name}" file_reader "h" "SHARED_DIR")
     
-    # Tmux variable sharing (panes 3-4)
-    p3=$(create_new_pane "${session_name}" "v")
-    execute_shell_function "${session_name}" "${p3}" tmux_var_writer
+    # Tmux variable sharing (middle, top half)
+    p3=$(tmx_pane_function "${session_name}" tmux_var_writer "v" "")
     
-    p4=$(create_new_pane "${session_name}" "h")
-    execute_shell_function "${session_name}" "${p4}" tmux_var_reader
+    # Tmux variable sharing (middle, bottom half)
+    p4=$(tmx_pane_function "${session_name}" tmux_var_reader "h" "")
     
-    # Named pipe sharing (panes 5-6)
-    p5=$(create_new_pane "${session_name}" "v")
-    execute_shell_function "${session_name}" "${p5}" pipe_writer "SHARED_DIR"
+    # Named pipe sharing (right side, top half)
+    p5=$(tmx_pane_function "${session_name}" pipe_writer "v" "SHARED_DIR")
     
-    p6=$(create_new_pane "${session_name}" "h")
-    execute_shell_function "${session_name}" "${p6}" pipe_reader "SHARED_DIR"
+    # Named pipe sharing (right side, bottom half)
+    p6=$(tmx_pane_function "${session_name}" pipe_reader "h" "SHARED_DIR")
     
-    # Interactive menu demo (pane 7)
-    p7=$(create_new_pane "${session_name}" "v")
-    execute_shell_function "${session_name}" "${p7}" interactive_menu "SHARED_DIR"
+    # Interactive menu - separate pane on far right
+    p7=$(tmx_pane_function "${session_name}" interactive_menu "v" "SHARED_DIR")
     
     # Keep script running and show instructions
     msg_info "Variable sharing demo is running in session: ${session_name}"
@@ -239,7 +235,8 @@ main() {
     read -r
     
     # Cleanup
-    kill_tmux_session "${session_name}"
+    echo "Cleaning up, killing session ${session_name}"
+    tmx_kill_session "${session_name}"
 }
 
 # Run the main function if script is executed directly

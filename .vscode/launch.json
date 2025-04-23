@@ -51,6 +51,17 @@
                 "--vendor",
                 "nvidia"
             ]
+        },
+        {
+            "type": "bashdb",
+            "request": "launch",
+            "name": "Bash-Debug (External Konsole)",
+            "program": "${file}",
+            "terminalKind": "external",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "DEBUG_CONSOLE": "external"
+            }
         }
     ]
 }
