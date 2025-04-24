@@ -98,9 +98,9 @@ main() {
     
     # Create the worker panes first
     msg_info "Creating counter panes..."
-    p1=$(tmx_pane_function "${session_var}" green "v" "${session_var}")
-    p2=$(tmx_pane_function "${session_var}" blue "h" "${session_var}")
-    p3=$(tmx_pane_function "${session_var}" yellow "h" "${session_var}")
+    p1=$(tmx_pane_function "${session_var}" green "v" "" "${session_var}")
+    p2=$(tmx_pane_function "${session_var}" blue "h" "" "${session_var}")
+    p3=$(tmx_pane_function "${session_var}" yellow "h" "" "${session_var}")
     
     # Store pane indices for the control pane
     PANES_TO_CONTROL="${p1} ${p2} ${p3}"

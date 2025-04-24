@@ -19,7 +19,7 @@
 
 # Source global utilities - use absolute path for shellcheck
 # shellcheck source=./sh-globals.sh
-# shellcheck disable=SC1091
+# shellcheck disable=SC1091,SC2317,SC2155,SC2034,SC2250,SC2162,SC2312
 source "sh-globals.sh"
 
 # Initialize sh-globals if not already initialized
@@ -37,8 +37,20 @@ if [[ "${DEBUG:-0}" -eq 1 && -z "${TMX_DEBUG_DIR}" ]]; then
     # Create default debug directory in script's location
     SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
     TMX_DEBUG_DIR="${SCRIPT_DIR}/tmux_debug_scripts"
+    # Check if directory exists and prompt before deleting
+    if [[ -d "${TMX_DEBUG_DIR}" ]]; then
+        # Use standard read prompt
+        read -p "Debug directory '${TMX_DEBUG_DIR}' exists. Clear it? [y/N]: " clear_choice
+        echo "" # Newline after prompt
+        if [[ "${clear_choice,,}" == "y" ]]; then # Convert to lowercase
+            msg_info "Clearing existing debug directory: ${TMX_DEBUG_DIR}"
+    rm -rf "${TMX_DEBUG_DIR}"
+        else
+            msg_info "Using existing debug directory without clearing: ${TMX_DEBUG_DIR}"
+        fi
+    fi
     mkdir -p "${TMX_DEBUG_DIR}"
-    msg_debug "Auto-created debug scripts directory: ${TMX_DEBUG_DIR}"
+    msg_debug "Using debug scripts directory: ${TMX_DEBUG_DIR}"
 fi
 
 # Use user-specified debug directory if set
@@ -268,6 +280,9 @@ tmx_generate_script_boilerplate() {
     script_content=$(cat <<EOF
 #!/usr/bin/env bash
 
+# Enable xtrace for detailed debugging within the pane
+set -x
+
 # Set up script environment
 SCRIPT_DIR="$(printf '%q' "${script_dir}")"
 export PATH="\${SCRIPT_DIR}:\${PATH}"
@@ -289,14 +304,19 @@ EOF
         script_content+=$'\n'
     fi
     
+    # Ensure a newline before the next block
+    script_content+=$'\n'
+    
     # Add sh-globals sourcing
     script_content+=$(cat <<EOF
+echo "--- Sourcing sh-globals ---"
 # Source sh-globals.sh (essential for colors/msg functions)
 if [[ -f "${script_dir}/sh-globals.sh" ]]; then
     source "${script_dir}/sh-globals.sh" || { echo "ERROR: Failed to source sh-globals.sh"; exit 1; }
 else
     echo "ERROR: sh-globals.sh not found at ${script_dir}/sh-globals.sh"; exit 1;
 fi
+echo "--- sh-globals sourced ---"
 
 # Initialize globals
 export DEBUG="${DEBUG:-0}"
@@ -322,14 +342,15 @@ EOF
     
     # Add user content with description - strip any existing exit commands
     # to prevent duplicate exits
-    local cleaned_content="${content/exit 0/}"
+    # local cleaned_content="${content/exit 0/}" # Don't strip exit anymore
     
     script_content+=$(cat <<EOF
 # ${description} follows
-${cleaned_content}
+echo "--- Executing main content --- "
+${content}
 
 # Add explicit exit to ensure clean termination
-exit 0
+# exit 0 # Removed unconditional exit
 EOF
     )
     
@@ -727,9 +748,11 @@ tmx_execute_shell_function() {
     local pane="${2}"
     local func_name="${3}"
     local vars="${4:-}"
+    shift 4 # Shift off the first 4 args
+    local func_args=("$@") # Remaining args are function args
     
     # Use msg_debug for internal operation details
-    msg_debug "Execute shell function '${func_name}' in ${session}:0.${pane} (vars: ${vars:-none})"
+    msg_debug "Execute shell function '${func_name}' in ${session}:0.${pane} (vars: ${vars:-none}) (args: ${#func_args[@]})"
     
     # Check if function exists
     if ! declare -f "${func_name}" > /dev/null; then
@@ -771,7 +794,13 @@ tmx_execute_shell_function() {
     
     # Simple invocation of the function without any explicit exit
     # Let tmx_generate_script_boilerplate handle the exit statement
-    local run_content="${func_name}"
+    # local run_content="${func_name}"
+    # Build the command string to run the function with args
+    local args_string=""
+    for arg in "${func_args[@]}"; do
+        args_string+=$(printf '%q ' "$arg") # Quote each argument
+    done
+    local run_content="${func_name} ${args_string}" # This line replaces the simple func_name call
     
     # Generate main function script using the helper, including helper functions
     local script_content
@@ -805,8 +834,10 @@ ${func_def}")
     chmod +x "${tmp_script}"
     
     # Execute temporary script
+    local send_cmd="bash $(printf '%q' "${tmp_script}")"
     # Use bash explicitly to ensure consistent environment
-    tmux send-keys -t "${session}:0.${pane}" "bash $(printf '%q' "${tmp_script}")" C-m 
+    msg_debug "Executing in pane ${session}:0.${pane} via send-keys: tmux send-keys -t \"${session}:0.${pane}\" \"${send_cmd}\" C-m"
+    tmux send-keys -t "${session}:0.${pane}" "${send_cmd}" C-m
     
     return $?
 }
@@ -942,27 +973,25 @@ tmx_var_set() {
     local var_name="${1}"
     local var_value="${2}"
     local target_session="${3:-}"
-    
+    local output
     if [[ -z "${var_name}" ]]; then
         msg_error "tmx_var_set: Variable name cannot be empty."
         return 1
     fi
-
     msg_debug "Setting tmux env var: ${var_name}=${var_value} in session '${target_session:-global}'"
-    
-    # Handle session-specific or global variables
     if [[ -n "${target_session}" ]]; then
-        tmux set-environment -t "${target_session}" "${var_name}" "${var_value}" 2>/dev/null || {
-            msg_warning "Failed to set tmux variable ${var_name} for session ${target_session}"
+        # Capture stderr (2>&1) and check return code
+        if ! output=$(tmux set-environment -t "${target_session}" "${var_name}" "${var_value}" 2>&1); then 
+            msg_error "tmx_var_set FAILED for '${var_name}=${var_value}' in session '${target_session}'. tmux output: ${output}"
             return 1
-        }
+        fi
     else
-        tmux set-environment -g "${var_name}" "${var_value}" 2>/dev/null || {
-            msg_warning "Failed to set global tmux variable ${var_name}"
+        # Capture stderr (2>&1) and check return code
+        if ! output=$(tmux set-environment -g "${var_name}" "${var_value}" 2>&1); then 
+            msg_error "tmx_var_set FAILED for global '${var_name}=${var_value}'. tmux output: ${output}"
             return 1
-        }
     fi
-    
+    fi
     return 0
 }
 
@@ -975,26 +1004,58 @@ tmx_var_get() {
     local var_name="${1}"
     local target_session="${2:-}"
     local value=""
-    
+    local output # For capturing command output + stderr
+
     if [[ -z "${var_name}" ]]; then
         msg_error "tmx_var_get: Variable name cannot be empty."
         return 1
     fi
-    
+
     # Handle session-specific or global variables
     if [[ -n "${target_session}" ]]; then
-        if ! value=$(tmux show-environment -t "${target_session}" "${var_name}" 2>/dev/null | cut -d= -f2-); then
-            msg_debug "Variable '${var_name}' not found in session ${target_session}"
-            return 1
+        # Capture stderr (2>&1) and check return code
+        if ! output=$(tmux show-environment -t "${target_session}" "${var_name}" 2>&1); then
+            # Check if the error is just 'unknown variable' (which means unset)
+            if [[ "${output}" == *"unknown variable"* ]]; then
+                msg_debug "tmx_var_get: Variable '${var_name}' not found/unset in session '${target_session}'"
+                echo "" # Echo nothing for unset
+                return 0 # Return success for unset variable
+            else
+                # Log other errors
+                msg_error "tmx_var_get FAILED for '${var_name}' in session '${target_session}'. tmux output: ${output}"
+                return 1
+            fi
         fi
-    else
-        if ! value=$(tmux show-environment -g "${var_name}" 2>/dev/null | cut -d= -f2-); then
-            msg_debug "Variable '${var_name}' not found in global environment"
-            return 1
+        # Check if the output indicates the variable was unset (starts with -)
+        # This is another way tmux might indicate unset, handle both
+        if [[ "${output}" == -* ]]; then
+             msg_debug "tmx_var_get: Variable '${var_name}' explicitly unset (-) in session '${target_session}'"
+             echo ""
+             return 0 # Return success for unset variable
+        fi
+    else # Global variable
+        # Capture stderr (2>&1) and check return code
+        if ! output=$(tmux show-environment -g "${var_name}" 2>&1); then
+            # Check if the error is just 'unknown variable'
+            if [[ "${output}" == *"unknown variable"* ]]; then
+                msg_debug "tmx_var_get: Global variable '${var_name}' not found/unset"
+                echo ""
+                return 0 # Return success for unset variable
+            else
+                msg_error "tmx_var_get FAILED for global '${var_name}'. tmux output: ${output}"
+                return 1
+            fi
+        fi
+        # Check if the output indicates the variable was unset (starts with -)
+        if [[ "${output}" == -* ]]; then
+             msg_debug "tmx_var_get: Global variable '${var_name}' explicitly unset (-)"
+             echo ""
+             return 0 # Return success for unset variable
         fi
     fi
-    
-    # Echo the value so it can be captured
+
+    # If successful and variable found, extract value
+    value=$(echo "${output}" | cut -d= -f2-)
     echo "${value}"
     return 0
 }
@@ -1023,7 +1084,165 @@ tmx_init_vars_array() {
     return ${result}
 }
 
-# ======== END TMUX ENVIRONMENT VARIABLE HELPERS ========
+# Define the control function (moved from tmx_control_pane)
+control_function() {
+    # Variables to monitor and panes to control
+    local vars="$1"
+    local panes="$2"
+    local session="$3"
+    local refresh_rate="$4"
+
+    # Debug the received parameters
+    echo "Control function started with:"
+    echo "- Variables to monitor: ${vars}"
+    echo "- Panes to control: ${panes}"
+    echo "- Session: ${session}"
+    echo "- Refresh rate: ${refresh_rate}"
+
+    # Convert space-separated strings into arrays
+    read -ra VAR_ARRAY <<< "$vars"
+    read -ra PANE_ARRAY <<< "$panes"
+
+    # Validate refresh_rate (default to 1 if empty or invalid)
+    if [[ -z "${refresh_rate}" || ! "${refresh_rate}" =~ ^[0-9]+$ ]]; then
+        echo "WARNING: Invalid refresh rate '${refresh_rate}', using default of 1 second"
+        refresh_rate=1
+    fi
+
+    # Setup display
+    echo "=== TMUX CONTROL PANE ==="
+    echo "Session: $session | Refresh: ${refresh_rate}s"
+    echo "Controls: [q] Quit all | [r] Restart pane | [number] Close pane"
+    echo "-------------------------------"
+
+    # Enable special terminal handling for input
+    stty -echo
+
+    # Main control loop
+    while true; do
+        # Trace loop execution
+        msg_debug "control_function: Starting loop iteration at $(date '+%H:%M:%S.%3N')"
+        clear
+        echo "=== TMUX CONTROL PANE ==="
+        echo "Session: $session | Refresh: ${refresh_rate}s | $(date '+%H:%M:%S')"
+        echo "Controls: [q] Quit all | [r] Restart pane | [number] Close pane"
+        echo "-------------------------------"
+
+        # Display variables
+        msg_debug "control_function: Processing ${#VAR_ARRAY[@]} variables"
+        echo "= Variables ="
+        for var in "${VAR_ARRAY[@]}"; do
+            local value=$(tmx_var_get "$var" "$session" 2>/dev/null || echo "N/A")
+            msg_debug "control_function: Variable '$var' = '$value'"
+
+            # Choose color based on variable name
+            if [[ "$var" == *"green"* ]]; then
+                msg_green "$var: $value"
+            elif [[ "$var" == *"blue"* ]]; then
+                msg_blue "$var: $value"
+            elif [[ "$var" == *"red"* ]]; then
+                msg_red "$var: $value"
+            elif [[ "$var" == *"yellow"* ]]; then
+                msg_yellow "$var: $value"
+            else
+                echo "$var: $value"
+            fi
+        done
+
+        # Display panes
+        msg_debug "control_function: Checking status of ${#PANE_ARRAY[@]} panes"
+        echo "= Panes ="
+        for pane in "${PANE_ARRAY[@]}";
+        do
+            # Add extra debugging for has-pane
+            local target_pane_id="${session}:0.${pane}"
+            msg_debug "control_function: Checking pane existance for target: ${target_pane_id}"
+            if tmux has-pane -t "${target_pane_id}" 2>/dev/null; then
+                msg_debug "control_function: Pane ${pane} EXISTS (tmux has-pane SUCCEEDED)"
+                msg_success "Pane ${pane}: Running - press ${pane} to close"
+            else
+                local exit_status=$?
+                msg_debug "control_function: Pane ${pane} DOES NOT EXIST (tmux has-pane FAILED with status ${exit_status})"
+                msg_warning "Pane ${pane}: Not running"
+            fi
+        done;
+        msg_debug "control_function: Checking for user input";
+
+        # Check for input (non-blocking)
+        msg_debug "control_function: Checking for user input"
+        read -t 0.1 -n 1 input
+        if [[ -n "$input" ]]; then
+            msg_debug "control_function: Received input: '$input'"
+            case "$input" in
+                q)
+                    msg_debug "control_function: Quit command received"
+                    echo "Closing all panes and exiting..."
+                    for pane in "${PANE_ARRAY[@]}"; do
+                        msg_debug "control_function: Killing pane ${pane}"
+                        tmx_kill_pane "$session" "$pane" 2>/dev/null
+                    done
+                    msg_debug "control_function: Killing session ${session}"
+                    tmux kill-session -t "$session" 2>/dev/null
+                    break
+                    ;;
+                r)
+                    msg_debug "control_function: Restart command received"
+                    echo "Enter pane number to restart: "
+                    read -n 1 pane_num
+                    msg_debug "control_function: Pane number to restart: '$pane_num'"
+                    if [[ "$pane_num" =~ ^[0-9]+$ ]]; then
+                        # Check if pane_num is in the array using a loop instead of pattern matching
+                        local pane_exists=0
+                        for p in "${PANE_ARRAY[@]}"; do
+                            if [[ "$p" == "$pane_num" ]]; then
+                                pane_exists=1
+                                break
+                            fi
+                        done
+
+                        if [[ "$pane_exists" -eq 1 ]]; then
+                            msg_debug "control_function: Found pane ${pane_num} in managed panes"
+                            # Logic to restart a pane would go here
+                            # This depends on how panes were originally launched
+                            echo "Restart functionality requires customization"
+                        else
+                            msg_debug "control_function: Pane ${pane_num} not found in managed panes"
+                        fi
+                    fi
+                    ;;
+                [0-9])
+                    msg_debug "control_function: Close pane command received for pane: $input"
+                    # Check if input is in the array using a loop
+                    local pane_exists=0
+                    for p in "${PANE_ARRAY[@]}"; do
+                        if [[ "$p" == "$input" ]]; then
+                            pane_exists=1
+                            break
+                        fi
+                    done
+
+                    if [[ "$pane_exists" -eq 1 ]]; then
+                        msg_debug "control_function: Closing pane $input"
+                        echo "Closing pane $input..."
+                        tmx_kill_pane "$session" "$input"
+                    else
+                        msg_debug "control_function: Pane $input not found in managed panes"
+                    fi
+                    ;;
+                *)
+                    # Ignore any other input
+                    msg_debug "Ignoring unexpected input: $input"
+                    ;;
+            esac
+        fi
+
+        msg_debug "control_function: Sleeping for ${refresh_rate}s"
+        sleep "$refresh_rate"
+    done
+
+    # Restore terminal settings
+    stty echo
+}
 
 # Create a new pane and execute a shell function in it
 # Arguments:
@@ -1040,9 +1259,11 @@ tmx_pane_function() {
     local func_name="${2}"
     local pane_option="${3:-h}"  # Default to horizontal split
     local vars="${4:-}"
+    shift 4 # Shift off the first 4 args
+    local func_args=("$@") # Remaining args are function args
     local pane_index
     
-    msg_debug "Executing ${func_name} in session=${session}, pane=${pane_option}"
+    msg_debug "Executing ${func_name} in session=${session}, pane=${pane_option} (args: ${#func_args[@]})"
     
     # Check if pane_option is a number (existing pane) or split type
     if [[ "${pane_option}" =~ ^[0-9]+$ ]]; then
@@ -1060,7 +1281,7 @@ tmx_pane_function() {
     fi
     
     # Execute the function in the selected pane
-    tmx_execute_shell_function "${session}" "${pane_index}" "${func_name}" "${vars}"
+    tmx_execute_shell_function "${session}" "${pane_index}" "${func_name}" "${vars}" "${func_args[@]}"
     
     # Return the pane index
     echo "${pane_index}"
@@ -1209,14 +1430,18 @@ tmx_monitor_pane() {
         
         # Main monitoring loop
         while true; do
+            # Trace loop execution
+            msg_debug "monitor_function: Starting loop iteration at $(date '+%H:%M:%S.%3N')"
             clear
             echo "=== TMUX VARIABLE MONITOR ==="
             echo "Session: $session | Refresh: ${refresh_rate}s | $(date '+%H:%M:%S')"
             echo "-------------------------------"
             
             # Display each variable with color based on name
+            msg_debug "monitor_function: Processing ${#VAR_ARRAY[@]} variables"
             for var in "${VAR_ARRAY[@]}"; do
                 local value=$(tmx_var_get "$var" "$session" 2>/dev/null || echo "N/A")
+                msg_debug "monitor_function: Variable '$var' = '$value'"
                 
                 # Choose color based on variable name
                 if [[ "$var" == *"green"* ]]; then
@@ -1232,6 +1457,7 @@ tmx_monitor_pane() {
                 fi
             done
             
+            msg_debug "monitor_function: Sleeping for ${refresh_rate}s"
             sleep "$refresh_rate"
         done
     }
@@ -1271,134 +1497,6 @@ tmx_control_pane() {
     local refresh="${5:-1}"      # Default refresh rate: 1 second
     local env_vars="${6:-}"
     
-    # Define the control function
-    control_function() {
-        # Variables to monitor and panes to control
-        local vars="$1"
-        local panes="$2"
-        local session="$3"
-        local refresh_rate="$4"
-        
-        # Debug the received parameters
-        echo "Control function started with:"
-        echo "- Variables to monitor: ${vars}"
-        echo "- Panes to control: ${panes}"
-        echo "- Session: ${session}"
-        echo "- Refresh rate: ${refresh_rate}"
-        
-        # Convert space-separated strings into arrays
-        read -ra VAR_ARRAY <<< "$vars"
-        read -ra PANE_ARRAY <<< "$panes"
-        
-        # Validate refresh_rate (default to 1 if empty or invalid)
-        if [[ -z "${refresh_rate}" || ! "${refresh_rate}" =~ ^[0-9]+$ ]]; then
-            echo "WARNING: Invalid refresh rate '${refresh_rate}', using default of 1 second"
-            refresh_rate=1
-        fi
-        
-        # Setup display
-        echo "=== TMUX CONTROL PANE ==="
-        echo "Session: $session | Refresh: ${refresh_rate}s"
-        echo "Controls: [q] Quit all | [r] Restart pane | [number] Close pane"
-        echo "-------------------------------"
-        
-        # Enable special terminal handling for input
-        stty -echo
-        
-        # Main control loop
-        while true; do
-            clear
-            echo "=== TMUX CONTROL PANE ==="
-            echo "Session: $session | Refresh: ${refresh_rate}s | $(date '+%H:%M:%S')"
-            echo "Controls: [q] Quit all | [r] Restart pane | [number] Close pane"
-            echo "-------------------------------"
-            
-            # Display variables
-            echo "= Variables ="
-            for var in "${VAR_ARRAY[@]}"; do
-                local value=$(tmx_var_get "$var" "$session" 2>/dev/null || echo "N/A")
-                
-                # Choose color based on variable name
-                if [[ "$var" == *"green"* ]]; then
-                    msg_green "$var: $value"
-                elif [[ "$var" == *"blue"* ]]; then
-                    msg_blue "$var: $value"
-                elif [[ "$var" == *"red"* ]]; then
-                    msg_red "$var: $value"
-                elif [[ "$var" == *"yellow"* ]]; then
-                    msg_yellow "$var: $value"
-                else
-                    echo "$var: $value"
-                fi
-            done
-            
-            # Display panes
-            echo "= Panes ="
-            for pane in "${PANE_ARRAY[@]}"; do
-                if tmux has-pane -t "${session}:0.${pane}" 2>/dev/null; then
-                    msg_success "Pane ${pane}: Running - press ${pane} to close"
-                else
-                    msg_warning "Pane ${pane}: Not running"
-                fi
-            done
-            
-            # Check for input (non-blocking)
-            read -t 0.1 -n 1 input
-            if [[ -n "$input" ]]; then
-                case "$input" in
-                    q)
-                        echo "Closing all panes and exiting..."
-                        for pane in "${PANE_ARRAY[@]}"; do
-                            tmx_kill_pane "$session" "$pane" 2>/dev/null
-                        done
-                        tmux kill-session -t "$session" 2>/dev/null
-                        break
-                        ;;
-                    r)
-                        echo "Enter pane number to restart: "
-                        read -n 1 pane_num
-                        if [[ "$pane_num" =~ ^[0-9]+$ ]]; then
-                            # Check if pane_num is in the array using a loop instead of pattern matching
-                            local pane_exists=0
-                            for p in "${PANE_ARRAY[@]}"; do
-                                if [[ "$p" == "$pane_num" ]]; then
-                                    pane_exists=1
-                                    break
-                                fi
-                            done
-                            
-                            if [[ "$pane_exists" -eq 1 ]]; then
-                                # Logic to restart a pane would go here
-                                # This depends on how panes were originally launched
-                                echo "Restart functionality requires customization"
-                            fi
-                        fi
-                        ;;
-                    [0-9])
-                        # Check if input is in the array using a loop
-                        local pane_exists=0
-                        for p in "${PANE_ARRAY[@]}"; do
-                            if [[ "$p" == "$input" ]]; then
-                                pane_exists=1
-                                break
-                            fi
-                        done
-                        
-                        if [[ "$pane_exists" -eq 1 ]]; then
-                            echo "Closing pane $input..."
-                            tmx_kill_pane "$session" "$input"
-                        fi
-                        ;;
-                esac
-            fi
-            
-            sleep "$refresh_rate"
-        done
-        
-        # Restore terminal settings
-        stty echo
-    }
-    
     # Setup control pane in appropriate pane
     local pane_index
     
@@ -1407,12 +1505,14 @@ tmx_control_pane() {
     
     # Set refresh_rate variable in the session BEFORE creating the pane
     tmx_var_set "refresh_rate" "$refresh" "$session"
-    
-    # Use tmx_pane_function to handle pane creation and execution
-    # Create a parameter string WITHOUT using quotes that would be preserved
-    local params="${monitor_vars} ${control_panes} ${session} ${refresh} ${env_vars}"
-    pane_index=$(tmx_pane_function "$session" control_function "$pane_option" "$params")
-    
+
+    # Call control_function directly, passing required arguments
+    # Also pass TMUX variable via the 'vars' argument (arg 4)
+    local vars_to_export=""
+    [[ -n "${TMUX:-}" ]] && vars_to_export="TMUX" # Add TMUX if set
+    pane_index=$(tmx_pane_function "$session" control_function "$pane_option" "${vars_to_export}" \
+        "${monitor_vars}" "${control_panes}" "${session}" "${refresh}")
+
     echo "$pane_index"
     return 0
 }
@@ -1453,21 +1553,27 @@ tmx_status_pane() {
         
         # Main status loop
         while true; do
+            # Trace loop execution
+            msg_debug "status_function: Starting loop iteration at $(date '+%H:%M:%S.%3N')"
             clear
             echo -e "$(msg_bold "SESSION: ${session} | $(date '+%H:%M:%S')")"
             echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
+            msg_debug "status_function: Processing ${#VAR_ARRAY[@]} variables for compact display"
             # Display each variable in a compact format
             local output=""
             for var in "${VAR_ARRAY[@]}"; do
                 local value=$(tmx_var_get "$var" "$session" 2>/dev/null || echo "N/A")
+                msg_debug "status_function: Variable '$var' = '$value'"
                 output+="$(msg_bold "$var")=$value | "
             done
             
             # Remove trailing separator and print
             output="${output% | }"
+            msg_debug "status_function: Output length: ${#output} characters"
             echo -e "$output"
             
+            msg_debug "status_function: Sleeping for ${refresh_rate}s"
             sleep "$refresh_rate"
         done
     }
@@ -1534,9 +1640,12 @@ tmx_manage_pane() {
         
         # Main management loop
         while true; do
+            # Trace loop execution
+            msg_debug "manage_function: Starting loop iteration at $(date '+%H:%M:%S.%3N')"
             # Update session time
             local current_time=$(date +%s)
             local elapsed=$((current_time - start_time))
+            msg_debug "manage_function: Session time elapsed: ${elapsed}s"
             tmx_var_set "session_time" "${elapsed}s" "$session_name"
             
             clear
@@ -1545,20 +1654,24 @@ tmx_manage_pane() {
             echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             # Debug monitor vars and get their values
+            msg_debug "manage_function: Processing ${#VAR_ARRAY[@]} variables"
             echo "= VARIABLES ="
             local empty_vars=1
             
             for var in "${VAR_ARRAY[@]}"; do
                 # Skip empty variable names
                 if [[ -z "$var" ]]; then
+                    msg_debug "manage_function: Skipping empty variable name"
                     continue
                 fi
                 
                 local value=$(tmux show-environment -t "$session_name" "$var" 2>/dev/null | cut -d= -f2- || echo "N/A")
                 if [[ "$value" == "N/A" ]]; then
+                    msg_debug "manage_function: Variable '$var' not found in environment, trying tmx_var_get"
                     # Try getting it with tmx_var_get as fallback
                     value=$(tmx_var_get "$var" "$session_name" 2>/dev/null || echo "N/A")
                 fi
+                msg_debug "manage_function: Variable '$var' = '$value'"
                 
                 empty_vars=0
                 
@@ -1580,6 +1693,7 @@ tmx_manage_pane() {
             
             # Show a message if no variables
             if [[ $empty_vars -eq 1 ]]; then
+                msg_debug "manage_function: No variables to monitor"
                 echo "No variables to monitor."
             fi
             
@@ -1588,15 +1702,19 @@ tmx_manage_pane() {
             echo "Press [q] to quit session | [h] for help"
             
             # Check for input (non-blocking)
+            msg_debug "manage_function: Checking for user input"
             read -t 0.1 -n 1 input
             if [[ -n "$input" ]]; then
+                msg_debug "manage_function: Received input: '$input'"
                 case "$input" in
                     q)
+                        msg_debug "manage_function: Quit command received"
                         echo "Closing session..."
                         tmux kill-session -t "$session_name" 2>/dev/null
                         break
                         ;;
                     h)
+                        msg_debug "manage_function: Help command received"
                         clear
                         echo "=== TMUX MANAGER HELP ==="
                         echo "q - Quit session"
@@ -1604,10 +1722,16 @@ tmx_manage_pane() {
                         echo ""
                         echo "Press any key to return..."
                         read -n 1
+                        msg_debug "manage_function: Exiting help screen"
+                        ;;
+                    *)
+                        # Ignore any other input
+                        msg_debug "Ignoring input: $input"
                         ;;
                 esac
             fi
             
+            msg_debug "manage_function: Sleeping for ${refresh_rate}s"
             sleep "$refresh_rate"
         done
     }

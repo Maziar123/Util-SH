@@ -505,6 +505,61 @@ confirm() {
   [[ "$response" =~ ^(yes|y)$ ]]
 }
 
+# Confirm prompt: Enter to confirm, Esc/other to cancel
+# Arguments:
+#   $1: Prompt message (e.g., "Press Enter to delete, Esc to cancel:")
+# Returns:
+#   0 if Enter was pressed
+#   1 if Escape or any other key was pressed, or if read failed
+confirm_enter_esc() {
+  local prompt="$1"
+  local key
+  local rest
+
+  # Print the prompt - use -n to avoid newline before read
+  # Output prompt to stderr to avoid interfering with calling script captures
+  echo -n -e "$prompt " >&2
+
+  # Read a single character, suppressing echo (-s)
+  # Use -r to prevent backslash interpretation (though less critical with -n 1)
+  read -r -n 1 -s key
+  local read_status=$?
+
+  # Add a newline after input for cleaner terminal output
+  echo >&2
+
+  if [[ $read_status -ne 0 ]]; then
+    msg_debug "confirm_enter_esc: read command failed with status $read_status"
+    # Indicate cancellation clearly
+    msg_warning "Input error, cancelling." >&2
+    return 1 # Read failed
+  fi
+
+  # Check the key pressed
+  if [[ -z "$key" ]]; then
+    msg_debug "confirm_enter_esc: Enter pressed"
+    # Optionally provide feedback
+    # msg_info "Confirmed." >&2
+    return 0 # Enter pressed - Confirm
+  elif [[ "$key" == $'\e' ]]; then
+    # Escape key pressed, potentially part of a sequence
+    # Read any remaining characters in the sequence with a short timeout
+    read -r -t 0.1 -n 2 -s rest
+    msg_debug "confirm_enter_esc: Escape pressed (potential sequence: '$rest')"
+    # Indicate cancellation clearly
+    msg_warning "Cancelled." >&2
+    return 1 # Escape pressed - Cancel
+  else
+    # Any other key pressed
+    # Read potential multi-byte character sequences with short timeout
+    read -r -t 0.1 -n 5 -s rest 
+    msg_debug "confirm_enter_esc: Other key pressed ('$key', potential sequence: '$rest')"
+    # Indicate cancellation clearly
+    msg_warning "Cancelled." >&2
+    return 1 # Other key pressed - Cancel
+  fi
+}
+
 # Prompt for input with default value
 prompt_input() {
   local prompt="$1"
