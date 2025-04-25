@@ -116,7 +116,7 @@ blue ()
 
 # Shell function 'blue' follows
 echo "--- Executing main content --- "
-blue control_demo_1745510464 
+blue control_demo_1745572912 
 
 # Add explicit exit to ensure clean termination
 # exit 0 # Removed unconditional exit

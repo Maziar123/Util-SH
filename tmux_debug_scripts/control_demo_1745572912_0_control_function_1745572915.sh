@@ -238,7 +238,7 @@ control_function ()
 
 # Shell function 'control_function' follows
 echo "--- Executing main content --- "
-control_function counter_green\ counter_blue\ counter_yellow 1\ 2\ 3 control_demo_1745510464 1 
+control_function counter_green\ counter_blue\ counter_yellow 1\ 2\ 3 control_demo_1745572912 1 
 
 # Add explicit exit to ensure clean termination
 # exit 0 # Removed unconditional exit

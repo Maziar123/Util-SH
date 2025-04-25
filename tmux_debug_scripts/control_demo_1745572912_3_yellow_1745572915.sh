@@ -116,7 +116,7 @@ yellow ()
 
 # Shell function 'yellow' follows
 echo "--- Executing main content --- "
-yellow control_demo_1745510464 
+yellow control_demo_1745572912 
 
 # Add explicit exit to ensure clean termination
 # exit 0 # Removed unconditional exit

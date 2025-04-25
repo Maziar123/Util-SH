@@ -62,6 +62,14 @@
             "env": {
                 "DEBUG_CONSOLE": "external"
             }
+        },
+        {
+            "type": "bashdb",
+            "request": "launch",
+            "name": "Debug Captured Tmux Script",
+            "program": "/tmp/tmp.8CYlVSjEC7",
+            "terminalKind": "integrated",
+            "cwd": "${workspaceFolder}"
         }
     ]
 }

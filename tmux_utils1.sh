@@ -830,13 +830,161 @@ ${func_def}")
         fi
     fi
     
+    # --- BEGIN DEBUG_SUBSCRIPT INTERCEPTION ---
+    # Check if DEBUG_SUBSCRIPT is set and matches the current function name
+    if [[ -n "${DEBUG_SUBSCRIPT:-}" && "${DEBUG_SUBSCRIPT}" == "${func_name}" ]]; then
+        # Debug log setup
+        DEBUG_LOG="/tmp/debug_intercept.log"
+        {
+            echo "=== DEBUG INTERCEPTION LOG $(date) ==="
+            echo "Function: ${func_name}"
+            echo "Temp script: ${tmp_script}"
+            echo "Current directory: $(pwd)"
+        } > "$DEBUG_LOG"
+        
+        # Ensure we're using direct screen output (the default), not stdout
+        export MSG_TO_STDOUT=0
+        
+        msg "" # Blank line
+        msg_box "DEBUG INTERCEPT: Call to '${func_name}'" "${YELLOW}"
+        msg_warning "Debugging requested for function: ${func_name}"
+        msg_cyan "Temporary script generated at: ${tmp_script}"
+        msg ""
+        
+        msg_bold "Option 1: Debug in Terminal (Recommended for context)"
+        msg_yellow "  bashdb ${tmp_script}"
+        msg ""
+        
+        msg_bold "Option 2: Debug in VS Code (GUI, context issues likely)"
+        msg_yellow "  Add/Update this entry in your .vscode/launch.json:"
+        msg "    {"
+        msg "        \"type\": \"bashdb\","
+        msg "        \"request\": \"launch\","
+        msg "        \"name\": \"Debug Captured Tmux Script\","
+        msg_cyan "        \"program\": \"${tmp_script}\","
+        msg "        \"terminalKind\": \"integrated\","
+        msg "        \"cwd\": \"\${workspaceFolder}\""
+        msg "    }"
+        msg ""
+        
+        msg_bold "Option 3: Run In Tmux Pane with Debug Pause"
+        msg_yellow "  This runs the script in the proper tmux context with a debug pause at start"
+        msg_yellow "  You can attach 'bashdb --bashdb-pid=PID' when it shows"
+        msg ""
+        
+        msg_warning "NOTE: The temporary script might be deleted when the main script exits."
+        msg_warning "The main script is paused. Choose your option:"
+        msg ""
+        
+        # Force flush output buffer
+        sync
+        
+        # Present options to user
+        msg_bold "Enter your choice:"
+        msg "  1 - Debug in external terminal"
+        msg "  2 - Debug in VS Code"
+        msg "  3 - Run in tmux pane with debug pause"
+        msg "  q - Quit debugging"
+        
+        # Read user choice
+        local choice
+        read -r -p "Enter choice [1/2/3/q]: " choice </dev/tty
+        
+        case "${choice}" in
+            1)
+                msg_info "Starting external terminal debugging. Press Enter AFTER starting the debugger."
+                read -r -p "Press Enter to continue... " _ </dev/tty
+                return 0 # Skip tmux execution
+                ;;
+            2)
+                msg_info "Using VS Code debugging. Press Enter AFTER starting the VS Code debugger."
+                read -r -p "Press Enter to continue... " _ </dev/tty
+                return 0 # Skip tmux execution
+                ;;
+            3)
+                # Modify temporary script to include a debugging pause at the beginning
+                local debug_header
+                debug_header="# === DEBUG PAUSE INJECTED BY TMUX_UTILS ===
+BASHDB_PID=\$$
+echo \"\"
+echo \"=============================================\" 
+echo \"SCRIPT PAUSED FOR DEBUG ATTACHMENT\"
+echo \"Script running as PID: \$BASHDB_PID\"
+echo \"To attach debugger, run in another terminal:\"
+echo \"  bashdb --bashdb-pid=\$BASHDB_PID\"
+echo \"=============================================\" 
+echo \"\"
+echo \"Press Enter to continue execution...\"
+read -r _
+# === END DEBUG PAUSE ==="
+                
+                # Insert debug header at the beginning of the script content
+                # Find the position after the shebang and any initial comments
+                local line_count=0
+                local insert_line=2 # Default to line 2 (after shebang)
+                
+                # Read the first few lines to find where to insert our debug code
+                while IFS= read -r line && [[ $line_count -lt 10 ]]; do
+                    ((line_count++))
+                    # Skip shebang, empty lines, and comment lines
+                    if [[ $line_count -eq 1 && "$line" == "#!/"* ]]; then
+                        continue # Skip shebang line
+                    elif [[ "$line" == "#"* || "$line" == "" ]]; then
+                        ((insert_line++)) # Move insertion point past comments/empty lines
+                    else
+                        break # Found non-comment, non-empty line - stop here
+                    fi
+                done < "$tmp_script"
+                
+                # Create a temporary file for the modified script
+                local modified_script
+                modified_script=$(mktemp)
+                
+                # Extract the first part (up to insert_line)
+                head -n "$insert_line" "$tmp_script" > "$modified_script"
+                
+                # Add our debug header
+                echo "$debug_header" >> "$modified_script"
+                
+                # Add the rest of the original script
+                tail -n +$((insert_line + 1)) "$tmp_script" >> "$modified_script"
+                
+                # Replace the original script with our modified version
+                cat "$modified_script" > "$tmp_script"
+                rm "$modified_script"
+                
+                # Make executable again (just in case permissions were lost)
+                chmod +x "$tmp_script"
+                
+                msg_success "Injected debug pause at beginning of script."
+                msg_success "Script will run in tmux pane and pause for debugger attachment."
+                msg "" # Blank line
+                msg_info "Continuing with tmux execution..."
+                sleep 1
+                
+                # Continue with normal tmx_execute_shell_function flow
+                # FALL THROUGH to normal execution
+                ;;
+            q|Q|*)
+                msg_warning "Debugging canceled. Exiting."
+                return 1 # Skip execution and signal error
+                ;;
+        esac
+        
+        # Only reached with option 3 (or if case somehow doesn't match)
+        msg "" # Add newline after read
+    fi
+    # --- END DEBUG_SUBSCRIPT INTERCEPTION ---
+    
+    # Normal execution continues from here
+    
     # Make script executable
     chmod +x "${tmp_script}"
     
     # Execute temporary script
     local send_cmd="bash $(printf '%q' "${tmp_script}")"
     # Use bash explicitly to ensure consistent environment
-    msg_debug "Executing in pane ${session}:0.${pane} via send-keys: tmux send-keys -t \"${session}:0.${pane}\" \"${send_cmd}\" C-m"
+    msg_debug "Executing in pane ${session}:0.${pane} via send-keys: tmux send-keys -t \\"${session}:0.${pane}\\" \\"${send_cmd}\\" C-m"
     tmux send-keys -t "${session}:0.${pane}" "${send_cmd}" C-m
     
     return $?

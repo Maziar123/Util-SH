@@ -1038,54 +1038,97 @@ format_bytes() {
 # These are simpler alternatives to the logging functions that don't add timestamps
 # or write to log files, just formatted terminal output
 
-# Display a plain message
+# Display a plain message to terminal 
+# Arguments:
+#   $1+: Message content 
+#   If MSG_TO_STDOUT=1, output goes to stdout instead of directly to terminal
 msg() {
-  echo -e "$*"
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "$*"
+  else
+    echo -e "$*" > /dev/tty
+  fi
 }
 
 # Display a black message
 msg_black() {
-  echo -e "${BLACK}$*${NC}"
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${BLACK}$*${NC}"
+  else
+    echo -e "${BLACK}$*${NC}" > /dev/tty
+  fi
 }
 
 # Display a red message
 msg_red() {
-  echo -e "${RED}$*${NC}"
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${RED}$*${NC}"
+  else
+    echo -e "${RED}$*${NC}" > /dev/tty
+  fi
 }
 
 # Display a green message
 msg_green() {
-  echo -e "${GREEN}$*${NC}"
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${GREEN}$*${NC}"
+  else
+    echo -e "${GREEN}$*${NC}" > /dev/tty
+  fi
 }
 
 # Display a yellow message
 msg_yellow() {
-  echo -e "${YELLOW}$*${NC}"
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${YELLOW}$*${NC}"
+  else
+    echo -e "${YELLOW}$*${NC}" > /dev/tty
+  fi
 }
 
 # Display a blue message
 msg_blue() {
-  echo -e "${BLUE}$*${NC}"
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${BLUE}$*${NC}"
+  else
+    echo -e "${BLUE}$*${NC}" > /dev/tty
+  fi
 }
 
 # Display a magenta message
 msg_magenta() {
-  echo -e "${MAGENTA}$*${NC}"
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${MAGENTA}$*${NC}"
+  else
+    echo -e "${MAGENTA}$*${NC}" > /dev/tty
+  fi
 }
 
 # Display a cyan message
 msg_cyan() {
-  echo -e "${CYAN}$*${NC}"
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${CYAN}$*${NC}"
+  else
+    echo -e "${CYAN}$*${NC}" > /dev/tty
+  fi
 }
 
 # Display a white message
 msg_white() {
-  echo -e "${WHITE}$*${NC}"
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${WHITE}$*${NC}"
+  else
+    echo -e "${WHITE}$*${NC}" > /dev/tty
+  fi
 }
 
 # Display a gray message
 msg_gray() {
-  echo -e "${GRAY}$*${NC}"
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${GRAY}$*${NC}"
+  else
+    echo -e "${GRAY}$*${NC}" > /dev/tty
+  fi
 }
 
 # Display a message with black background
@@ -1130,7 +1173,11 @@ msg_bg_white() {
 
 # Display a bold message
 msg_bold() {
-  echo -e "${BOLD}$*${NC}"
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${BOLD}$*${NC}"
+  else
+    echo -e "${BOLD}$*${NC}" > /dev/tty
+  fi
 }
 
 # Display a dim message
@@ -1160,22 +1207,38 @@ msg_hidden() {
 
 # Display an informational message (blue)
 msg_info() {
-  echo -e "${BLUE}$*${NC}"
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${BLUE}$*${NC}"
+  else
+    echo -e "${BLUE}$*${NC}" > /dev/tty
+  fi
 }
 
 # Display a success message (green)
 msg_success() {
-  echo -e "${GREEN}$*${NC}"
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${GREEN}$*${NC}"
+  else
+    echo -e "${GREEN}$*${NC}" > /dev/tty
+  fi
 }
 
-# Display a warning message (yellow)
+# Display a warning message (yellow) - stderr if using stdout
 msg_warning() {
-  echo -e "${YELLOW}$*${NC}" >&2
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${YELLOW}$*${NC}" >&2
+  else
+    echo -e "${YELLOW}$*${NC}" > /dev/tty
+  fi
 }
 
-# Display an error message (red)
+# Display an error message (red) - stderr if using stdout
 msg_error() {
-  echo -e "${RED}$*${NC}" >&2
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${RED}$*${NC}" >&2
+  else
+    echo -e "${RED}$*${NC}" > /dev/tty
+  fi
 }
 
 # Display a highlighted message (cyan)
@@ -1271,12 +1334,16 @@ msg_box() {
   local padding_str=""
   for ((i=0; i<padding; i++)); do padding_str+=" "; done
 
-  # Use msg_color for top and bottom borders
-  msg_color "┌${border_line}┐" "$color"
-  # Use echo -e for the middle line to preserve potential colors within the text itself
-  echo -e "${color}│${NC}${padding_str}${text}${padding_str}${color}│${NC}"
-  # Use msg_color for the bottom border
-  msg_color "└${border_line}┘" "$color"
+  # Use echo with color for box borders and content
+  if [[ "${MSG_TO_STDOUT:-0}" -eq 1 ]]; then
+    echo -e "${color}┌${border_line}┐${NC}"
+    echo -e "${color}│${NC}${padding_str}${text}${padding_str}${color}│${NC}"
+    echo -e "${color}└${border_line}┘${NC}"
+  else
+    echo -e "${color}┌${border_line}┐${NC}" > /dev/tty
+    echo -e "${color}│${NC}${padding_str}${text}${padding_str}${color}│${NC}" > /dev/tty
+    echo -e "${color}└${border_line}┘${NC}" > /dev/tty
+  fi
 }
 
 # ======== GET VALUE FUNCTIONS ========
