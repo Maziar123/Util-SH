@@ -157,16 +157,21 @@ control_function ()
         done;
         msg_debug "control_function: Checking status of ${#PANE_ARRAY[@]} panes";
         msg_bold "= Panes =";
+        local all_panes=$(tmux list-panes -t "${session}" -F "#{pane_index} #{pane_id}");
+        msg_debug "control_function: Available panes in session: ${all_panes}";
         for pane in "${PANE_ARRAY[@]}";
         do
-            local target_pane_id="${session}:0.${pane}";
-            msg_debug "control_function: Checking pane existance for target: ${target_pane_id}";
-            if tmux has-pane -t "${target_pane_id}" 2> /dev/null; then
-                msg_debug "control_function: Pane ${pane} EXISTS (tmux has-pane SUCCEEDED)";
+            local pane_exists=0;
+            if echo "${all_panes}" | grep -q "^${pane} %"; then
+                pane_exists=1;
+                local pane_id=$(echo "${all_panes}" | grep "^${pane} %" | awk '{print $2}');
+                msg_debug "control_function: Pane ${pane} EXISTS with ID ${pane_id}";
+            else
+                msg_debug "control_function: Pane ${pane} DOES NOT EXIST (not found in session pane list)";
+            fi;
+            if [[ $pane_exists -eq 1 ]]; then
                 msg_success "Pane ${pane}: Running - press ${pane} to close";
             else
-                local exit_status=$?;
-                msg_debug "control_function: Pane ${pane} DOES NOT EXIST (tmux has-pane FAILED with status ${exit_status})";
                 msg_warning "Pane ${pane}: Not running";
             fi;
         done;
@@ -258,7 +263,7 @@ control_function ()
 
 # Shell function 'control_function' follows
 echo "--- Executing main content --- "
-control_function counter_green\ counter_blue\ counter_yellow 1\ 2\ 3 control_demo_1745774905 1 
+control_function counter_green\ counter_blue\ counter_yellow 1\ 2\ 3 control_demo_1745777876 1 
 
 # Add explicit exit to ensure clean termination
 # exit 0 # Removed unconditional exit

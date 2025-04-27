@@ -1234,20 +1234,30 @@ control_function() {
         # Display panes
         msg_debug "control_function: Checking status of ${#PANE_ARRAY[@]} panes"
         msg_bold "= Panes ="
-        for pane in "${PANE_ARRAY[@]}";
-        do
-            # Add extra debugging for has-pane
-            local target_pane_id="${session}:0.${pane}"
-            msg_debug "control_function: Checking pane existance for target: ${target_pane_id}"
-            if tmux has-pane -t "${target_pane_id}" 2>/dev/null; then
-                msg_debug "control_function: Pane ${pane} EXISTS (tmux has-pane SUCCEEDED)"
+        
+        # Get the list of all panes in the current session with their IDs for accurate detection
+        local all_panes=$(tmux list-panes -t "${session}" -F "#{pane_index} #{pane_id}")
+        msg_debug "control_function: Available panes in session: ${all_panes}"
+        
+        for pane in "${PANE_ARRAY[@]}"; do
+            # Check if the pane exists by looking for its index in the list of panes
+            local pane_exists=0
+            
+            # Look for the pane index in the list of active panes
+            if echo "${all_panes}" | grep -q "^${pane} %"; then
+                pane_exists=1
+                local pane_id=$(echo "${all_panes}" | grep "^${pane} %" | awk '{print $2}')
+                msg_debug "control_function: Pane ${pane} EXISTS with ID ${pane_id}"
+            else
+                msg_debug "control_function: Pane ${pane} DOES NOT EXIST (not found in session pane list)"
+            fi
+            
+            if [[ $pane_exists -eq 1 ]]; then
                 msg_success "Pane ${pane}: Running - press ${pane} to close"
             else
-                local exit_status=$?
-                msg_debug "control_function: Pane ${pane} DOES NOT EXIST (tmux has-pane FAILED with status ${exit_status})"
                 msg_warning "Pane ${pane}: Not running"
             fi
-        done;
+        done
         msg_debug "control_function: Finished checking pane statuses";
         msg_debug "control_function: Preparing for non-blocking read...";
         
@@ -1474,12 +1484,30 @@ tmx_kill_pane() {
         return 1
     fi
     
-    if tmux kill-pane -t "${session}:0.${pane}" 2>/dev/null; then
-        msg_debug "Killed pane ${pane} in session: ${session}"
+    # Get the list of all panes in the current session with their IDs
+    local all_panes=$(tmux list-panes -t "${session}" -F "#{pane_index} #{pane_id}")
+    
+    # Look for the pane index in the list of active panes
+    if echo "${all_panes}" | grep -q "^${pane} %"; then
+        # Get the pane ID from the list
+        local pane_id=$(echo "${all_panes}" | grep "^${pane} %" | awk '{print $2}')
+        msg_debug "Killing pane ${pane} with ID ${pane_id}"
+        tmux kill-pane -t "${pane_id}" 2>/dev/null
         return 0
     else
-        msg_warning "Failed to kill pane ${pane} (may not exist) in session: ${session}"
-        return 1
+        # Fall back to traditional methods if the pane isn't found in the list
+        if tmux has-pane -t "%${pane}" 2>/dev/null; then
+            msg_debug "Killing pane %${pane}"
+            tmux kill-pane -t "%${pane}" 2>/dev/null
+            return 0
+        elif tmux has-pane -t "${session}:0.${pane}" 2>/dev/null; then
+            msg_debug "Killing pane ${session}:0.${pane}"
+            tmux kill-pane -t "${session}:0.${pane}" 2>/dev/null
+            return 0
+        else
+            msg_warning "Failed to kill pane ${pane} (may not exist) in session: ${session}"
+            return 1
+        fi
     fi
 }
 

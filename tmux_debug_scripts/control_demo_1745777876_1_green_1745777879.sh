@@ -116,7 +116,7 @@ green ()
 
 # Shell function 'green' follows
 echo "--- Executing main content --- "
-green control_demo_1745774905 
+green control_demo_1745777876 
 
 # Add explicit exit to ensure clean termination
 # exit 0 # Removed unconditional exit

@@ -99,24 +99,24 @@ tmx_var_get ()
     echo "${value}";
     return 0
 }
-yellow () 
+blue () 
 { 
     local session="$1";
     while true; do
-        local current_yellow=$(tmx_var_get "counter_yellow" "$session");
-        local v=$((current_yellow + 5));
-        tmx_var_set "counter_yellow" "$v" "$session";
+        local current_blue=$(tmx_var_get "counter_blue" "$session");
+        local v=$((current_blue + 3));
+        tmx_var_set "counter_blue" "$v" "$session";
         clear;
-        msg_bg_yellow "YELLOW COUNTER (PANE 3)";
-        msg_yellow "Value: ${v}";
-        msg_yellow "Press '3' in control pane to close";
-        sleep 3;
+        msg_bg_blue "BLUE COUNTER (PANE 2)";
+        msg_blue "Value: ${v}";
+        msg_blue "Press '2' in control pane to close";
+        sleep 2;
     done
 }
 
-# Shell function 'yellow' follows
+# Shell function 'blue' follows
 echo "--- Executing main content --- "
-yellow control_demo_1745774905 
+blue control_demo_1745777876 
 
 # Add explicit exit to ensure clean termination
 # exit 0 # Removed unconditional exit
