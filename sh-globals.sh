@@ -1248,7 +1248,10 @@ msg_highlight() {
 
 # Display a header message (bold, magenta)
 msg_header() {
-  echo -e "${BOLD}${MAGENTA}$*${NC}"
+  #echo -e "${MAGENTA}$*${NC}"
+  #echo "HEADER: $*"
+  echo -e "${RED}$*${NC}" > /dev/tty
+  
 }
 
 # Display a section divider with text

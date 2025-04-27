@@ -67,7 +67,7 @@
             "type": "bashdb",
             "request": "launch",
             "name": "Debug Captured Tmux Script",
-            "program": "/tmp/tmp.8CYlVSjEC7",
+            "program": "/tmp/tmp.4AZCLVWdGo",
             "terminalKind": "integrated",
             "cwd": "${workspaceFolder}"
         }

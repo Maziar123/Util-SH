@@ -2,5 +2,9 @@
   {
     "file": "Samples/tmux_micro_var_counter.sh",
     "decorator": "👀"
+  },
+  {
+    "file": "Samples/tmux_control_demo.sh",
+    "decorator": "🤧"
   }
 ]

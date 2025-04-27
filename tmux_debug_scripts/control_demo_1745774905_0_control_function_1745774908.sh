@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Enable xtrace for detailed debugging within the pane
-set -x
+# set -x  # Removed as per user request
 
 # Set up script environment
 SCRIPT_DIR="/mnt/N1/MZ/AMZ/Projects/linux/Util-Sh"
@@ -18,7 +18,7 @@ fi
 echo "--- sh-globals sourced ---"
 
 # Initialize globals
-export DEBUG="1"
+export DEBUG="${DEBUG}"
 sh-globals_init
 
 # Define session self-destruct function
@@ -105,31 +105,34 @@ control_function ()
     local panes="$2";
     local session="$3";
     local refresh_rate="$4";
-    echo "Control function started with:";
-    echo "- Variables to monitor: ${vars}";
-    echo "- Panes to control: ${panes}";
-    echo "- Session: ${session}";
-    echo "- Refresh rate: ${refresh_rate}";
+    msg_debug "Control function started with:";
+    msg_debug "- Variables to monitor: ${vars}";
+    msg_debug "- Panes to control: ${panes}";
+    msg_debug "- Session: ${session}";
+    msg_debug "- Refresh rate: ${refresh_rate}";
     read -ra VAR_ARRAY <<< "$vars";
     read -ra PANE_ARRAY <<< "$panes";
+    msg_debug "control_function: VAR_ARRAY size=${#VAR_ARRAY[@]}";
+    msg_debug "control_function: PANE_ARRAY size=${#PANE_ARRAY[@]}";
     if [[ -z "${refresh_rate}" || ! "${refresh_rate}" =~ ^[0-9]+$ ]]; then
-        echo "WARNING: Invalid refresh rate '${refresh_rate}', using default of 1 second";
+        msg_warning "WARNING: Invalid refresh rate '${refresh_rate}', using default of 1 second";
         refresh_rate=1;
     fi;
-    echo "=== TMUX CONTROL PANE ===";
-    echo "Session: $session | Refresh: ${refresh_rate}s";
-    echo "Controls: [q] Quit all | [r] Restart pane | [number] Close pane";
-    echo "-------------------------------";
+    msg "=== TMUX CONTROL PANE ===";
+    msg "Session: $session | Refresh: ${refresh_rate}s";
+    msg "Controls: [q] Quit all | [r] Restart pane | [number] Close pane";
+    msg_section "" 50 "-";
     stty -echo;
+    msg_debug "control_function: Entering main loop";
     while true; do
         msg_debug "control_function: Starting loop iteration at $(date '+%H:%M:%S.%3N')";
         clear;
-        echo "=== TMUX CONTROL PANE ===";
-        echo "Session: $session | Refresh: ${refresh_rate}s | $(date '+%H:%M:%S')";
-        echo "Controls: [q] Quit all | [r] Restart pane | [number] Close pane";
-        echo "-------------------------------";
+        msg "=== TMUX CONTROL PANE ===";
+        msg "Session: $session | Refresh: ${refresh_rate}s | $(date '+%H:%M:%S')";
+        msg "Controls: [q] Quit all | [r] Restart pane | [number] Close pane";
+        msg_section "" 50 "-";
         msg_debug "control_function: Processing ${#VAR_ARRAY[@]} variables";
-        echo "= Variables =";
+        msg_bold "= Variables =";
         for var in "${VAR_ARRAY[@]}";
         do
             local value=$(tmx_var_get "$var" "$session" 2> /dev/null || echo "N/A");
@@ -146,14 +149,14 @@ control_function ()
                         if [[ "$var" == *"yellow"* ]]; then
                             msg_yellow "$var: $value";
                         else
-                            echo "$var: $value";
+                            msg "$var: $value";
                         fi;
                     fi;
                 fi;
             fi;
         done;
         msg_debug "control_function: Checking status of ${#PANE_ARRAY[@]} panes";
-        echo "= Panes =";
+        msg_bold "= Panes =";
         for pane in "${PANE_ARRAY[@]}";
         do
             local target_pane_id="${session}:0.${pane}";
@@ -167,15 +170,24 @@ control_function ()
                 msg_warning "Pane ${pane}: Not running";
             fi;
         done;
-        msg_debug "control_function: Checking for user input";
-        msg_debug "control_function: Checking for user input";
-        read -t 0.1 -n 1 input;
+        msg_debug "control_function: Finished checking pane statuses";
+        msg_debug "control_function: Preparing for non-blocking read...";
+        input="";
+        if { 
+            IFS= read -r -t 0 -n 1 2> /dev/null || [[ $? -ge 128 ]]
+        } < /dev/tty; then
+            msg_debug "control_function: Reading one character";
+            IFS= read -r -n 1 input < /dev/tty;
+            msg_debug "control_function: Read completed, input: '${input}'";
+        else
+            msg_debug "control_function: No input available (check returned $?)";
+        fi;
         if [[ -n "$input" ]]; then
             msg_debug "control_function: Received input: '$input'";
             case "$input" in 
                 q)
                     msg_debug "control_function: Quit command received";
-                    echo "Closing all panes and exiting...";
+                    msg_warning "Closing all panes and exiting...";
                     for pane in "${PANE_ARRAY[@]}";
                     do
                         msg_debug "control_function: Killing pane ${pane}";
@@ -187,8 +199,9 @@ control_function ()
                 ;;
                 r)
                     msg_debug "control_function: Restart command received";
-                    echo "Enter pane number to restart: ";
+                    msg_yellow "Enter pane number to restart: ";
                     read -n 1 pane_num;
+                    msg "";
                     msg_debug "control_function: Pane number to restart: '$pane_num'";
                     if [[ "$pane_num" =~ ^[0-9]+$ ]]; then
                         local pane_exists=0;
@@ -201,11 +214,15 @@ control_function ()
                         done;
                         if [[ "$pane_exists" -eq 1 ]]; then
                             msg_debug "control_function: Found pane ${pane_num} in managed panes";
-                            echo "Restart functionality requires customization";
+                            msg_warning "Restart functionality requires customization";
                         else
                             msg_debug "control_function: Pane ${pane_num} not found in managed panes";
+                            msg_error "Pane ${pane_num} is not managed by this control pane.";
                         fi;
-                    fi
+                    else
+                        msg_error "Invalid input: Enter a valid pane number.";
+                    fi;
+                    sleep 1
                 ;;
                 [0-9])
                     msg_debug "control_function: Close pane command received for pane: $input";
@@ -219,11 +236,13 @@ control_function ()
                     done;
                     if [[ "$pane_exists" -eq 1 ]]; then
                         msg_debug "control_function: Closing pane $input";
-                        echo "Closing pane $input...";
+                        msg_info "Closing pane $input...";
                         tmx_kill_pane "$session" "$input";
                     else
                         msg_debug "control_function: Pane $input not found in managed panes";
-                    fi
+                        msg_error "Pane $input is not managed by this control pane.";
+                    fi;
+                    sleep 1
                 ;;
                 *)
                     msg_debug "Ignoring unexpected input: $input"
@@ -233,12 +252,13 @@ control_function ()
         msg_debug "control_function: Sleeping for ${refresh_rate}s";
         sleep "$refresh_rate";
     done;
-    stty echo
+    stty echo;
+    msg_debug "control_function: Exiting"
 }
 
 # Shell function 'control_function' follows
 echo "--- Executing main content --- "
-control_function counter_green\ counter_blue\ counter_yellow 1\ 2\ 3 control_demo_1745572912 1 
+control_function counter_green\ counter_blue\ counter_yellow 1\ 2\ 3 control_demo_1745774905 1 
 
 # Add explicit exit to ensure clean termination
 # exit 0 # Removed unconditional exit

@@ -281,7 +281,7 @@ tmx_generate_script_boilerplate() {
 #!/usr/bin/env bash
 
 # Enable xtrace for detailed debugging within the pane
-set -x
+# set -x  # Removed as per user request
 
 # Set up script environment
 SCRIPT_DIR="$(printf '%q' "${script_dir}")"
@@ -319,7 +319,7 @@ fi
 echo "--- sh-globals sourced ---"
 
 # Initialize globals
-export DEBUG="${DEBUG:-0}"
+export DEBUG="\${DEBUG}"
 sh-globals_init
 
 # Define session self-destruct function
@@ -635,7 +635,7 @@ tmx_cleanup_all() {
 }
 
 # Set up cleanup on script exit
-trap 'tmx_cleanup_all' EXIT HUP INT QUIT TERM
+# trap 'tmx_cleanup_all' EXIT HUP INT QUIT TERM
 
 # Execute a script defined in a function
 # Arguments:
@@ -841,137 +841,68 @@ ${func_def}")
             echo "Temp script: ${tmp_script}"
             echo "Current directory: $(pwd)"
         } > "$DEBUG_LOG"
-        
+
         # Ensure we're using direct screen output (the default), not stdout
         export MSG_TO_STDOUT=0
-        
+
         msg "" # Blank line
         msg_box "DEBUG INTERCEPT: Call to '${func_name}'" "${YELLOW}"
         msg_warning "Debugging requested for function: ${func_name}"
         msg_cyan "Temporary script generated at: ${tmp_script}"
         msg ""
-        
-        msg_bold "Option 1: Debug in Terminal (Recommended for context)"
+
+        msg_bold "Option 1: Debug in Terminal with bashdb"
         msg_yellow "  bashdb ${tmp_script}"
         msg ""
-        
-        msg_bold "Option 2: Debug in VS Code (GUI, context issues likely)"
-        msg_yellow "  Add/Update this entry in your .vscode/launch.json:"
-        msg "    {"
-        msg "        \"type\": \"bashdb\","
-        msg "        \"request\": \"launch\","
-        msg "        \"name\": \"Debug Captured Tmux Script\","
-        msg_cyan "        \"program\": \"${tmp_script}\","
-        msg "        \"terminalKind\": \"integrated\","
-        msg "        \"cwd\": \"\${workspaceFolder}\""
-        msg "    }"
+
+        msg_bold "Option 2: Debug in Neovim with GdbStartBashDB"
+        msg_yellow "  nvim -c ':GdbStartBashDB bashdb ${tmp_script}'"
         msg ""
-        
-        msg_bold "Option 3: Run In Tmux Pane with Debug Pause"
-        msg_yellow "  This runs the script in the proper tmux context with a debug pause at start"
-        msg_yellow "  You can attach 'bashdb --bashdb-pid=PID' when it shows"
-        msg ""
-        
+
         msg_warning "NOTE: The temporary script might be deleted when the main script exits."
-        msg_warning "The main script is paused. Choose your option:"
+        msg_warning "The main script is paused. Choose your debugging option:"
         msg ""
-        
+
         # Force flush output buffer
         sync
-        
+
         # Present options to user
         msg_bold "Enter your choice:"
-        msg "  1 - Debug in external terminal"
-        msg "  2 - Debug in VS Code"
-        msg "  3 - Run in tmux pane with debug pause"
-        msg "  q - Quit debugging"
-        
+        msg "  1 - Debug in external terminal (bashdb)"
+        msg "  2 - Debug in Neovim (GdbStartBashDB)"
+        msg "  q - Quit debugging (skip execution)"
+
         # Read user choice
         local choice
-        read -r -p "Enter choice [1/2/3/q]: " choice </dev/tty
-        
+        read -r -p "Enter choice [1/2/q]: " choice </dev/tty
+
         case "${choice}" in
             1)
-                msg_info "Starting external terminal debugging. Press Enter AFTER starting the debugger."
-                read -r -p "Press Enter to continue... " _ </dev/tty
-                return 0 # Skip tmux execution
+                msg_info "Preparing script ${tmp_script} for bashdb..."
+                # Comment out problematic terminal control lines for bashdb
+                sed -i -e 's/^\s*stty -echo/# stty -echo/g' \
+                       -e 's/^\s*stty echo/# stty echo/g' \
+                       -e 's/^\s*clear/# clear/g' "${tmp_script}"
+                
+                msg_info "Executing bashdb in target pane (${session}:0.${pane})..."
+                local debug_cmd="bashdb $(printf '%q' "${tmp_script}")"
+                tmux send-keys -t "${session}:0.${pane}" "${debug_cmd}" C-m
+                return 0 # Signal successful interception, skip normal execution
                 ;;
             2)
-                msg_info "Using VS Code debugging. Press Enter AFTER starting the VS Code debugger."
-                read -r -p "Press Enter to continue... " _ </dev/tty
-                return 0 # Skip tmux execution
-                ;;
-            3)
-                # Modify temporary script to include a debugging pause at the beginning
-                local debug_header
-                debug_header="# === DEBUG PAUSE INJECTED BY TMUX_UTILS ===
-BASHDB_PID=\$$
-echo \"\"
-echo \"=============================================\" 
-echo \"SCRIPT PAUSED FOR DEBUG ATTACHMENT\"
-echo \"Script running as PID: \$BASHDB_PID\"
-echo \"To attach debugger, run in another terminal:\"
-echo \"  bashdb --bashdb-pid=\$BASHDB_PID\"
-echo \"=============================================\" 
-echo \"\"
-echo \"Press Enter to continue execution...\"
-read -r _
-# === END DEBUG PAUSE ==="
-                
-                # Insert debug header at the beginning of the script content
-                # Find the position after the shebang and any initial comments
-                local line_count=0
-                local insert_line=2 # Default to line 2 (after shebang)
-                
-                # Read the first few lines to find where to insert our debug code
-                while IFS= read -r line && [[ $line_count -lt 10 ]]; do
-                    ((line_count++))
-                    # Skip shebang, empty lines, and comment lines
-                    if [[ $line_count -eq 1 && "$line" == "#!/"* ]]; then
-                        continue # Skip shebang line
-                    elif [[ "$line" == "#"* || "$line" == "" ]]; then
-                        ((insert_line++)) # Move insertion point past comments/empty lines
-                    else
-                        break # Found non-comment, non-empty line - stop here
-                    fi
-                done < "$tmp_script"
-                
-                # Create a temporary file for the modified script
-                local modified_script
-                modified_script=$(mktemp)
-                
-                # Extract the first part (up to insert_line)
-                head -n "$insert_line" "$tmp_script" > "$modified_script"
-                
-                # Add our debug header
-                echo "$debug_header" >> "$modified_script"
-                
-                # Add the rest of the original script
-                tail -n +$((insert_line + 1)) "$tmp_script" >> "$modified_script"
-                
-                # Replace the original script with our modified version
-                cat "$modified_script" > "$tmp_script"
-                rm "$modified_script"
-                
-                # Make executable again (just in case permissions were lost)
-                chmod +x "$tmp_script"
-                
-                msg_success "Injected debug pause at beginning of script."
-                msg_success "Script will run in tmux pane and pause for debugger attachment."
-                msg "" # Blank line
-                msg_info "Continuing with tmux execution..."
-                sleep 1
-                
-                # Continue with normal tmx_execute_shell_function flow
-                # FALL THROUGH to normal execution
+                msg_info "Executing nvim GdbStartBashDB in target pane (${session}:0.${pane})..."
+                # Ensure the nvim command is properly quoted for send-keys
+                local nvim_cmd="nvim -c ':GdbStartBashDB bashdb $(printf '%q' "${tmp_script}")'"
+                tmux send-keys -t "${session}:0.${pane}" "${nvim_cmd}" C-m
+                return 0 # Signal successful interception, skip normal execution
                 ;;
             q|Q|*)
-                msg_warning "Debugging canceled. Exiting."
-                return 1 # Skip execution and signal error
+                msg_warning "Debugging canceled. Skipping execution."
+                return 1 # Skip execution and signal error/cancel
                 ;;
         esac
-        
-        # Only reached with option 3 (or if case somehow doesn't match)
+
+        # Only reached if the case statement somehow fails to match, which shouldn't happen
         msg "" # Add newline after read
     fi
     # --- END DEBUG_SUBSCRIPT INTERCEPTION ---
@@ -1240,50 +1171,53 @@ control_function() {
     local session="$3"
     local refresh_rate="$4"
 
-    # Debug the received parameters
-    echo "Control function started with:"
-    echo "- Variables to monitor: ${vars}"
-    echo "- Panes to control: ${panes}"
-    echo "- Session: ${session}"
-    echo "- Refresh rate: ${refresh_rate}"
+    # Debug the received parameters using msg_debug
+    msg_debug "Control function started with:"
+    msg_debug "- Variables to monitor: ${vars}"
+    msg_debug "- Panes to control: ${panes}"
+    msg_debug "- Session: ${session}"
+    msg_debug "- Refresh rate: ${refresh_rate}"
 
     # Convert space-separated strings into arrays
     read -ra VAR_ARRAY <<< "$vars"
     read -ra PANE_ARRAY <<< "$panes"
+    msg_debug "control_function: VAR_ARRAY size=${#VAR_ARRAY[@]}"
+    msg_debug "control_function: PANE_ARRAY size=${#PANE_ARRAY[@]}"
 
     # Validate refresh_rate (default to 1 if empty or invalid)
     if [[ -z "${refresh_rate}" || ! "${refresh_rate}" =~ ^[0-9]+$ ]]; then
-        echo "WARNING: Invalid refresh rate '${refresh_rate}', using default of 1 second"
+        msg_warning "WARNING: Invalid refresh rate '${refresh_rate}', using default of 1 second"
         refresh_rate=1
     fi
 
-    # Setup display
-    echo "=== TMUX CONTROL PANE ==="
-    echo "Session: $session | Refresh: ${refresh_rate}s"
-    echo "Controls: [q] Quit all | [r] Restart pane | [number] Close pane"
-    echo "-------------------------------"
+    # Initial Setup display using msg_*
+    msg "=== TMUX CONTROL PANE ==="
+    msg "Session: $session | Refresh: ${refresh_rate}s"
+    msg "Controls: [q] Quit all | [r] Restart pane | [number] Close pane"
+    msg_section "" 50 "-" # Use msg_section for divider
 
     # Enable special terminal handling for input
     stty -echo
 
     # Main control loop
+    msg_debug "control_function: Entering main loop"
     while true; do
         # Trace loop execution
         msg_debug "control_function: Starting loop iteration at $(date '+%H:%M:%S.%3N')"
-        clear
-        echo "=== TMUX CONTROL PANE ==="
-        echo "Session: $session | Refresh: ${refresh_rate}s | $(date '+%H:%M:%S')"
-        echo "Controls: [q] Quit all | [r] Restart pane | [number] Close pane"
-        echo "-------------------------------"
+        clear # Keep clear for screen refresh
+        msg "=== TMUX CONTROL PANE ==="
+        msg "Session: $session | Refresh: ${refresh_rate}s | $(date '+%H:%M:%S')"
+        msg "Controls: [q] Quit all | [r] Restart pane | [number] Close pane"
+        msg_section "" 50 "-"
 
         # Display variables
         msg_debug "control_function: Processing ${#VAR_ARRAY[@]} variables"
-        echo "= Variables ="
+        msg_bold "= Variables ="
         for var in "${VAR_ARRAY[@]}"; do
             local value=$(tmx_var_get "$var" "$session" 2>/dev/null || echo "N/A")
             msg_debug "control_function: Variable '$var' = '$value'"
 
-            # Choose color based on variable name
+            # Choose color based on variable name (using existing msg_* colors)
             if [[ "$var" == *"green"* ]]; then
                 msg_green "$var: $value"
             elif [[ "$var" == *"blue"* ]]; then
@@ -1293,13 +1227,13 @@ control_function() {
             elif [[ "$var" == *"yellow"* ]]; then
                 msg_yellow "$var: $value"
             else
-                echo "$var: $value"
+                msg "$var: $value" # Use plain msg for default
             fi
         done
 
         # Display panes
         msg_debug "control_function: Checking status of ${#PANE_ARRAY[@]} panes"
-        echo "= Panes ="
+        msg_bold "= Panes ="
         for pane in "${PANE_ARRAY[@]}";
         do
             # Add extra debugging for has-pane
@@ -1314,17 +1248,26 @@ control_function() {
                 msg_warning "Pane ${pane}: Not running"
             fi
         done;
-        msg_debug "control_function: Checking for user input";
-
-        # Check for input (non-blocking)
-        msg_debug "control_function: Checking for user input"
-        read -t 0.1 -n 1 input
+        msg_debug "control_function: Finished checking pane statuses";
+        msg_debug "control_function: Preparing for non-blocking read...";
+        
+        # Use a different approach to avoid SIGALRM messages
+        input=""
+        if { IFS= read -r -t 0 -n 1 2>/dev/null || [[ $? -ge 128 ]]; } </dev/tty; then
+            # Data is available or proper timeout (code >= 128)
+            msg_debug "control_function: Reading one character"
+            IFS= read -r -n 1 input </dev/tty
+            msg_debug "control_function: Read completed, input: '${input}'"
+        else
+            msg_debug "control_function: No input available (check returned $?)"
+        fi
+        
         if [[ -n "$input" ]]; then
             msg_debug "control_function: Received input: '$input'"
             case "$input" in
                 q)
                     msg_debug "control_function: Quit command received"
-                    echo "Closing all panes and exiting..."
+                    msg_warning "Closing all panes and exiting..." # Use warning for quit action
                     for pane in "${PANE_ARRAY[@]}"; do
                         msg_debug "control_function: Killing pane ${pane}"
                         tmx_kill_pane "$session" "$pane" 2>/dev/null
@@ -1335,8 +1278,10 @@ control_function() {
                     ;;
                 r)
                     msg_debug "control_function: Restart command received"
-                    echo "Enter pane number to restart: "
+                    msg_yellow "Enter pane number to restart: " # Use yellow for prompt
                     read -n 1 pane_num
+                    # Add a newline after read for better formatting
+                    msg "" 
                     msg_debug "control_function: Pane number to restart: '$pane_num'"
                     if [[ "$pane_num" =~ ^[0-9]+$ ]]; then
                         # Check if pane_num is in the array using a loop instead of pattern matching
@@ -1352,11 +1297,15 @@ control_function() {
                             msg_debug "control_function: Found pane ${pane_num} in managed panes"
                             # Logic to restart a pane would go here
                             # This depends on how panes were originally launched
-                            echo "Restart functionality requires customization"
+                            msg_warning "Restart functionality requires customization" # Use warning
                         else
                             msg_debug "control_function: Pane ${pane_num} not found in managed panes"
+                            msg_error "Pane ${pane_num} is not managed by this control pane." # Error if invalid pane num
                         fi
+                    else
+                         msg_error "Invalid input: Enter a valid pane number." # Error if not a number
                     fi
+                    sleep 1 # Pause briefly after input
                     ;;
                 [0-9])
                     msg_debug "control_function: Close pane command received for pane: $input"
@@ -1371,11 +1320,13 @@ control_function() {
 
                     if [[ "$pane_exists" -eq 1 ]]; then
                         msg_debug "control_function: Closing pane $input"
-                        echo "Closing pane $input..."
+                        msg_info "Closing pane $input..." # Use info for closing action
                         tmx_kill_pane "$session" "$input"
                     else
                         msg_debug "control_function: Pane $input not found in managed panes"
+                        msg_error "Pane $input is not managed by this control pane." # Error if invalid pane
                     fi
+                    sleep 1 # Pause briefly after input
                     ;;
                 *)
                     # Ignore any other input
@@ -1386,10 +1337,11 @@ control_function() {
 
         msg_debug "control_function: Sleeping for ${refresh_rate}s"
         sleep "$refresh_rate"
-    done
+    done # REMOVED stderr redirection for the entire loop
 
     # Restore terminal settings
     stty echo
+    msg_debug "control_function: Exiting"
 }
 
 # Create a new pane and execute a shell function in it

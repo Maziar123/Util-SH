@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Enable xtrace for detailed debugging within the pane
-set -x
+# set -x  # Removed as per user request
 
 # Set up script environment
 SCRIPT_DIR="/mnt/N1/MZ/AMZ/Projects/linux/Util-Sh"
@@ -18,7 +18,7 @@ fi
 echo "--- sh-globals sourced ---"
 
 # Initialize globals
-export DEBUG="1"
+export DEBUG="${DEBUG}"
 sh-globals_init
 
 # Define session self-destruct function
@@ -99,24 +99,24 @@ tmx_var_get ()
     echo "${value}";
     return 0
 }
-green () 
+yellow () 
 { 
     local session="$1";
     while true; do
-        local current_green=$(tmx_var_get "counter_green" "$session");
-        local v=$((current_green + 2));
-        tmx_var_set "counter_green" "$v" "$session";
+        local current_yellow=$(tmx_var_get "counter_yellow" "$session");
+        local v=$((current_yellow + 5));
+        tmx_var_set "counter_yellow" "$v" "$session";
         clear;
-        msg_bg_green "GREEN COUNTER (PANE 1)";
-        msg_green "Value: ${v}";
-        msg_green "Press '1' in control pane to close";
-        sleep 1;
+        msg_bg_yellow "YELLOW COUNTER (PANE 3)";
+        msg_yellow "Value: ${v}";
+        msg_yellow "Press '3' in control pane to close";
+        sleep 3;
     done
 }
 
-# Shell function 'green' follows
+# Shell function 'yellow' follows
 echo "--- Executing main content --- "
-green control_demo_1745572912 
+yellow control_demo_1745774905 
 
 # Add explicit exit to ensure clean termination
 # exit 0 # Removed unconditional exit
