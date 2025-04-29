@@ -137,8 +137,8 @@ main() {
     
     # Pass both control variables to the control pane
     local vars_to_export="SHELL ${session_var} PANE_IDS"
-    # tmx_control_pane expects: session, vars to monitor, panes to control, refresh rate
-    local p0_id=$(tmx_control_pane "${session_var}" "counter_green counter_blue counter_yellow pane_id_1 pane_id_2 pane_id_3" "${PANES_TO_CONTROL}" "1")
+    # Explicitly use pane 0 for the control pane (last parameter)
+    local p0_id=$(tmx_control_pane "${session_var}" "counter_green counter_blue counter_yellow pane_id_1 pane_id_2 pane_id_3" "${PANES_TO_CONTROL}" "1" "0")
     
     # Keep parent process running
     echo "Running in: ${session_var} - Press Ctrl+C to exit"

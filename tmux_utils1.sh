@@ -1263,24 +1263,46 @@ tmx_init_vars_array() {
 #   $2: Variable names to monitor (space-separated string)
 #   $3: Pane indices to control (space-separated string)
 #   $4: Refresh rate in seconds (optional, default: 1)
+#   $5: Target pane index/ID (optional, default: 0 - use the first pane)
 # Returns: The pane ID of the control pane
 tmx_control_pane() {
     local session="${1}"
     local vars="${2}"
     local panes="${3}"
     local refresh_rate="${4:-1}"
+    local target_pane="${5:-0}"  # Default to using pane 0
     
-    msg_debug "Creating control pane in session '${session}'"
+    msg_debug "Creating control pane in session '${session}', target: ${target_pane}"
     
-    # Create a new horizontal pane for the control panel
-    local control_pane_id
-    control_pane_id=$(tmx_create_pane "${session}" "h")
+    local control_pane_id=""
+    
+    # Check if target_pane is already a pane ID
+    if [[ "${target_pane}" =~ ^%[0-9]+$ ]]; then
+        # Use the provided pane ID
+        control_pane_id="${target_pane}"
+        msg_debug "Using provided pane ID: ${control_pane_id}"
+    elif [[ "${target_pane}" =~ ^[0-9]+$ ]]; then
+        # Convert index to pane ID
+        control_pane_id=$(tmx_get_pane_id "${session}" "${target_pane}")
+        if [[ -z "${control_pane_id}" ]]; then
+            msg_warning "Could not find pane with index ${target_pane}, creating new pane"
+            # Create a new horizontal pane as fallback
+            control_pane_id=$(tmx_create_pane "${session}" "h")
+        else
+            msg_debug "Using pane with index ${target_pane}, ID: ${control_pane_id}"
+        fi
+    else
+        # Invalid target, create a new pane
+        msg_warning "Invalid target pane '${target_pane}', creating new pane"
+        control_pane_id=$(tmx_create_pane "${session}" "h")
+    fi
+    
     if [[ -z "${control_pane_id}" ]]; then
-        msg_error "Failed to create control pane in session '${session}'"
+        msg_error "Failed to get or create control pane in session '${session}'"
         return 1
     fi
     
-    msg_debug "Control pane created with ID: ${control_pane_id}"
+    msg_debug "Control pane ID: ${control_pane_id}"
     
     # Execute the control function in the pane
     if ! tmx_execute_shell_function "${session}" "${control_pane_id}" "control_function" "" "${vars}" "${panes}" "${session}" "${refresh_rate}"; then
