@@ -1706,3 +1706,218 @@ tmx_first_pane_function() {
     # Call the unified function using the retrieved Pane ID
     tmx_pane_function "${session}" "${func_name}" "${first_pane_id}" "${vars}" "${func_args[@]}"
 }
+
+# List all panes in a session with their IDs and indices
+# Arguments:
+#   $1: Session name
+#   $2: Variable prefix for storing IDs (optional)
+# Outputs: Debug information about all panes in the session
+# Sets variables if prefix is provided:
+#   - ${prefix}_COUNT: Number of panes
+#   - ${prefix}_IDS: Space-separated list of pane IDs
+#   - ${prefix}_INDICES: Space-separated list of pane indices
+#   - ${prefix}_ID_1, ${prefix}_ID_2, etc.: Individual pane IDs
+#   - ${prefix}_IDX_1, ${prefix}_IDX_2, etc.: Individual pane indices
+tmx_list_session_panes() {
+    local session="${1}"
+    local var_prefix="${2:-}"
+    
+    # Get all panes in the session with their indices and IDs
+    local pane_info
+    pane_info=$(tmux list-panes -t "${session}" -F "#{pane_index} #{pane_id}")
+    
+    if [[ -z "${pane_info}" ]]; then
+        msg_warning "No panes found in session '${session}'"
+        return 1
+    fi
+    
+    # Count the number of panes
+    local pane_count
+    pane_count=$(echo "${pane_info}" | wc -l)
+    
+    # Initialize arrays for IDs and indices
+    local ids=()
+    local indices=()
+    
+    # Debug information header
+    msg_debug "===== Session '${session}' Panes (${pane_count} total) ====="
+    
+    # Process each pane
+    local i=1
+    while IFS=' ' read -r idx id; do
+        msg_debug "Pane #${i}: Index=${idx}, ID=${id}"
+        
+        # Store in arrays
+        ids+=("${id}")
+        indices+=("${idx}")
+        
+        # Set individual variables if prefix is provided
+        if [[ -n "${var_prefix}" ]]; then
+            # Set individual ID and index variables
+            local id_var="${var_prefix}_ID_${i}"
+            local idx_var="${var_prefix}_IDX_${i}"
+            
+            # Use declare to create the variables in the parent scope
+            declare -g "${id_var}=${id}"
+            declare -g "${idx_var}=${idx}"
+            
+            # Store ID in tmux variable for persistence
+            tmx_var_set "pane_id_${i}" "${id}" "${session}"
+        fi
+        
+        i=$((i + 1))
+    done <<< "${pane_info}"
+    
+    # Join arrays into space-separated strings
+    local ids_str="${ids[*]}"
+    local indices_str="${indices[*]}"
+    
+    # Set summary variables if prefix is provided
+    if [[ -n "${var_prefix}" ]]; then
+        declare -g "${var_prefix}_COUNT=${pane_count}"
+        declare -g "${var_prefix}_IDS=${ids_str}"
+        declare -g "${var_prefix}_INDICES=${indices_str}"
+        
+        msg_debug "${var_prefix}_COUNT = ${pane_count}"
+        msg_debug "${var_prefix}_IDS = ${ids_str}"
+        msg_debug "${var_prefix}_INDICES = ${indices_str}"
+    fi
+    
+    # Return 0 for success
+    return 0
+}
+
+# Create a monitoring control pane with simplified interface for applications
+# Arguments:
+#   $1: Session name
+#   $2: Array name containing counter variables to monitor
+#   $3: Array name containing pane IDs to control (optional)
+#   $4: Refresh rate in seconds (optional, default: 1)
+#   $5: Target pane index/ID (optional, default: 0 - use the first pane)
+# Returns: The pane ID of the control pane
+tmx_create_monitoring_control() {
+    local session="${1}"
+    local -n counter_vars_ref="${2}"  # Name reference to counter vars array
+    local pane_ids_prefix="${3:-}"    # Prefix for pane ID variables (optional)
+    local refresh_rate="${4:-1}"
+    local target_pane="${5:-0}"  
+    
+    msg_debug "Creating monitoring control pane in session '${session}'"
+    
+    # Convert counter vars array to space-separated string
+    local counter_vars_str=""
+    for var in "${counter_vars_ref[@]}"; do
+        counter_vars_str+="${var} "
+    done
+    
+    # Add pane ID vars to monitor if prefix is provided
+    local pane_id_vars=""
+    if [[ -n "${pane_ids_prefix}" ]]; then
+        # Get the count variable to know how many panes
+        local count_var="${pane_ids_prefix}_COUNT"
+        local pane_count="${!count_var:-0}"
+        
+        # Add each pane_id_X variable
+        for ((i=1; i<=pane_count; i++)); do
+            pane_id_vars+="pane_id_${i} "
+        done
+    fi
+    
+    # Combine all variables to monitor
+    local all_vars="${counter_vars_str} ${pane_id_vars}"
+    all_vars="${all_vars% }"  # Remove trailing space
+    
+    # Get panes to control - use indices array from prefix if provided
+    local panes_to_control=""
+    if [[ -n "${pane_ids_prefix}" ]]; then
+        local indices_var="${pane_ids_prefix}_INDICES"
+        panes_to_control="${!indices_var:-}"
+    fi
+    
+    # Call the control pane function with the prepared arguments
+    local control_pane_id
+    control_pane_id=$(tmx_control_pane "${session}" "${all_vars}" "${panes_to_control}" "${refresh_rate}" "${target_pane}")
+    
+    # Return the control pane ID
+    echo "${control_pane_id}"
+    return 0
+}
+
+# Set up cleanup on script exit
+# trap 'tmx_cleanup_all' EXIT HUP INT QUIT TERM
+
+# Display session information with pane IDs in a formatted way
+# Arguments:
+#   $1: Session name
+#   $2: Control pane ID
+#   $3: Array of pane IDs with optional labels
+#     Format: "pane_id:label pane_id:label ..."
+#     Example: "%0:Main %1:Server %2:Client"
+#   $4: Section width (optional, default: 60)
+# Returns: 0 on success
+tmx_display_session_info() {
+    local session="${1}"
+    local control_id="${2}"
+    local pane_data="${3}"
+    local width="${4:-60}"
+    
+    msg_section "Session Information" "${width}" "="
+    echo "Session: ${session}"
+    echo "Pane IDs (stable identifiers):"
+    echo "  Control: ${control_id}"
+    
+    # Process pane data if provided
+    if [[ -n "${pane_data}" ]]; then
+        # Split the pane data string by spaces
+        local panes=()
+        read -ra panes <<< "${pane_data}"
+        
+        # Display each pane with its label
+        for pane_info in "${panes[@]}"; do
+            local id="${pane_info%%:*}"
+            local label="${pane_info#*:}"
+            
+            # If no label was provided (no colon), use a default label
+            if [[ "${id}" == "${label}" ]]; then
+                label="Pane ${id}"
+            fi
+            
+            echo "  ${label}:   ${id}"
+        done
+    fi
+    
+    msg_section "" "${width}" "="
+    return 0
+}
+
+# Monitor a tmux session until it terminates
+# Arguments:
+#   $1: Session name
+#   $2: Sleep interval in seconds (optional, default: 0.5)
+#   $3: Message to display while monitoring (optional)
+# Returns: 0 when session terminates normally, 1 on error
+tmx_monitor_session() {
+    local session="${1}"
+    local interval="${2:-0.5}"
+    local message="${3:-"Monitoring session ${session}... Press Ctrl+C to exit"}"
+    
+    # Set up signal handler for clean exit
+    trap 'echo "Received interrupt signal, exiting..."; return 0' INT TERM
+    
+    # Display monitoring message
+    msg_info "${message}"
+    
+    # Loop until the session is terminated
+    while true; do
+        # Check if session still exists
+        if ! tmux has-session -t "${session}" 2>/dev/null; then
+            msg_success "Session '${session}' was terminated, exiting..."
+            break
+        fi
+        
+        # Sleep to avoid excessive CPU usage
+        sleep "${interval}"
+    done
+    
+    return 0
+}
