@@ -1,3 +1,4 @@
 {
-    "terminal.external.linuxExec": "konsole"
+    "terminal.external.linuxExec": "konsole",
+    "CodeGPT.apiKey": "CodeGPT Plus Beta"
 }

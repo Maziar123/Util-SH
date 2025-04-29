@@ -1,33 +1,41 @@
 #!/usr/bin/env bash
 
-# Enable xtrace for detailed debugging within the pane
-# set -x  # Removed as per user request
+# Enable xtrace for detailed debugging within the pane if desired
+# set -x
 
 # Set up script environment
 SCRIPT_DIR="/mnt/N1/MZ/AMZ/Projects/linux/Util-Sh"
 export PATH="${SCRIPT_DIR}:${PATH}"
 # Attempt to cd to script dir, continue if it fails
 cd "${SCRIPT_DIR}" || echo "WARNING: Could not cd to ${SCRIPT_DIR}"
-echo "--- Sourcing sh-globals ---"
-# Source sh-globals.sh (essential for colors/msg functions)
-if [[ -f "/mnt/N1/MZ/AMZ/Projects/linux/Util-Sh/sh-globals.sh" ]]; then
-    source "/mnt/N1/MZ/AMZ/Projects/linux/Util-Sh/sh-globals.sh" || { echo "ERROR: Failed to source sh-globals.sh"; exit 1; }
+
+# --- Sourcing Core Utilities ---
+echo "--- Sourcing sh-globals --- "
+if [[ -f "${SCRIPT_DIR}/sh-globals.sh" ]]; then
+    source "${SCRIPT_DIR}/sh-globals.sh" || { echo "ERROR: Failed to source sh-globals.sh"; exit 1; }
 else
-    echo "ERROR: sh-globals.sh not found at /mnt/N1/MZ/AMZ/Projects/linux/Util-Sh/sh-globals.sh"; exit 1;
+    echo "ERROR: sh-globals.sh not found at ${SCRIPT_DIR}/sh-globals.sh"; exit 1;
 fi
-echo "--- sh-globals sourced ---"
+echo "--- Sourcing tmux_base_utils --- "
+if [[ -f "${SCRIPT_DIR}/tmux_base_utils.sh" ]]; then
+    source "${SCRIPT_DIR}/tmux_base_utils.sh" || { echo "ERROR: Failed to source tmux_base_utils.sh"; exit 1; }
+else
+    echo "ERROR: tmux_base_utils.sh not found at ${SCRIPT_DIR}/tmux_base_utils.sh"; exit 1;
+fi
+echo "--- Sourcing tmux_utils1 (for higher-level functions) ---"
+if [[ -f "${SCRIPT_DIR}/tmux_utils1.sh" ]]; then
+    # Set the guard variable to prevent initialization code in tmux_utils1.sh
+    export TMUX_UTILS1_SOURCED_IN_PANE=1
+    source "${SCRIPT_DIR}/tmux_utils1.sh" || { echo "ERROR: Failed to source tmux_utils1.sh"; exit 1; }
+else
+    echo "ERROR: tmux_utils1.sh not found at ${SCRIPT_DIR}/tmux_utils1.sh"; exit 1;
+fi
+echo "--- Core utilities sourced ---"
 
-# Initialize globals
-export DEBUG="${DEBUG}"
+# Initialize sh-globals within the pane script
+export DEBUG=1 # Capture parent DEBUG value, default 0 if unset in parent
 sh-globals_init
-
-# Define session self-destruct function
-tmx_self_destruct() {
-  local session_name=$(tmux display-message -p '#S')
-  msg_info "Closing session ${session_name}..."
-  ( sleep 0.5; tmux kill-session -t "${session_name}" ) &
-}
-# Include helper functions
+# Include specific helper functions for this script
 tmx_var_set () 
 { 
     local var_name="${1}";
@@ -62,6 +70,7 @@ tmx_var_get ()
         msg_error "tmx_var_get: Variable name cannot be empty.";
         return 1;
     fi;
+    msg_debug "Getting tmux env var: ${var_name} from session '${target_session:-global}'";
     if [[ -n "${target_session}" ]]; then
         if ! output=$(tmux show-environment -t "${target_session}" "${var_name}" 2>&1); then
             if [[ "${output}" == *"unknown variable"* ]]; then
@@ -114,9 +123,10 @@ blue ()
     done
 }
 
-# Shell function 'blue' follows
-echo "--- Executing main content --- "
-blue control_demo_1745777876 
+# --- Main Script Content (Shell function 'blue') Follows ---
+echo "--- Executing main content (Shell function 'blue') ---"
+blue control_demo_1745950122 
 
-# Add explicit exit to ensure clean termination
-# exit 0 # Removed unconditional exit
+echo "--- Main content finished ---"
+# Add explicit exit to ensure clean termination?
+# exit 0 # Consider if an explicit exit is always desired, maybe let script finish naturally

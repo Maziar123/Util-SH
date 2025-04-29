@@ -14,6 +14,19 @@
         {
             "type": "bashdb",
             "request": "launch",
+            "name": "Bash-Debug (external configuration)",
+            "program": "${file}",
+            "terminalKind": "external",
+            "pathBash": "bash",
+            "cwd": "${workspaceFolder}",
+            "args": [],
+            "env": {
+                "DEBUG_CONSOLE": "external"
+            }
+        },
+        {
+            "type": "bashdb",
+            "request": "launch",
             "name": "debug param handler",
             "program": "${workspaceFolder}/Samples/param_handler_usage.sh",
             "terminalKind": "integrated"
