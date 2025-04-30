@@ -84,7 +84,8 @@ EOF
     # Add any extra helper functions if provided (e.g., user-defined functions for tmx_execute_shell_function)
     if [[ -n "${helper_functions}" ]]; then
         script_content+=$'\n# Include specific helper functions for this script\n'
-        script_content+="${helper_functions}"
+        # Replace any \n with actual newlines to ensure proper function formatting
+        script_content+="$(echo -e "${helper_functions}")"
         script_content+=$'\n\n'
     fi
 

@@ -173,7 +173,7 @@ tmx_launch_terminal() {
 #   $2: Launch terminal flag (optional, default: true)
 #     - Can be "true" or "false" to control terminal launching
 #     - Can also be "--headless" which will be treated as "false"
-# Returns the session name on success, empty string on failure
+# Returns: 0 on success, 1 on failure
 tmx_create_session() {
     # Check if a session name was provided, otherwise generate one
     local session_name="${1:-session_$(date +%Y%m%d_%H%M%S)}"
@@ -185,6 +185,12 @@ tmx_create_session() {
     fi
     
     msg_debug "Attempting to create session: ${session_name} (launch_terminal=${launch_terminal})"
+    
+    # Check if session already exists
+    if tmux has-session -t "${session_name}" 2>/dev/null; then
+        msg_error "Session '${session_name}' already exists"
+        return 1
+    fi
     
     # Create detached session
     if ! tmux new-session -d -s "${session_name}"; then
@@ -244,11 +250,8 @@ tmx_create_session() {
         msg_success "New session '${session_name}' created. Use 'tmux attach-session -t ${session_name}' to reconnect."
     } >> ~/.tmux_sessions.log
     
-    # Set global SESSION_NAME for use by calling script
-    SESSION_NAME="${session_name}"
-    
-    # Return only the actual session name
-    echo "${session_name}"
+    # Export the session name for use by calling code
+    export TMX_SESSION_NAME="${session_name}"
     
     return 0
 }
@@ -438,6 +441,7 @@ tmx_create_pane() {
         local pane_id
         pane_id=$(tmux list-panes -t "${session}" -F "#{pane_id}" | tail -1)
         msg_debug "Created new pane with ID: ${pane_id}"
+        
         echo "${pane_id}"
     fi
     
@@ -822,8 +826,17 @@ tmx_execute_file() {
     # Write the script content to file
     echo "${script_content}" > "${tmp_script}"
     
+    # Wait for the file to be created on disk
+    if ! _tmx_wait_for_file "${tmp_script}" "-f" "creation"; then
+        return 1 # Error message handled by helper
+    fi
+    
     # Make script executable
     chmod +x "${tmp_script}"
+
+    if ! _tmx_wait_for_file "${tmp_script}" "-x" "executable permission $tmp_script "; then
+        return 1 # Error message handled by helper
+    fi
     
     # Execute temporary script using the Pane ID
     msg_debug "Sending script ${tmp_script} to pane ${target_pane_id}"
@@ -885,6 +898,9 @@ tmx_execute_shell_function() {
         return 1
     fi
 
+    # Clean up any potentially malformed newlines or quotes in the function definition
+    func_def=$(echo "${func_def}" | sed 's/^[[:space:]]*$//')
+    
     msg_debug "tmx_execute_shell_function: Captured function definition for ${func_name}:\n${func_def}"
 
     # Also export definitions of helper functions needed by func_def
@@ -932,35 +948,37 @@ tmx_execute_shell_function() {
     done
     local run_content="${func_name} ${args_string}" # This line replaces the simple func_name call
     
-    # Generate main function script using the helper, including helper functions
+    # Combine helper and main function definitions with proper newlines
+    local all_func_defs="${helper_defs}"$'\n'"${func_def}"
+
+    # Generate main function script using the helper, including all function definitions
     local script_content
-    script_content=$(tmx_generate_script_boilerplate "${run_content}" "Shell function '${func_name}'" "${vars}" "${helper_defs}
-${func_def}")
+    script_content=$(tmx_generate_script_boilerplate "${run_content}" "Shell function '${func_name}'" "${vars}" "${all_func_defs}")
     
     # Write the script content to file
     echo "${script_content}" > "${tmp_script}"
+    
+    # Wait for the file to be created on disk
+    if ! _tmx_wait_for_file "${tmp_script}" "-f" "creation"; then
+        return 1 # Error message handled by helper
+    fi
     
     # Save debug copy if TMX_DEBUG_DIR is set
     if [[ -n "${TMX_DEBUG_DIR}" ]]; then
         # Create debug directory if it doesn't exist
         mkdir -p "${TMX_DEBUG_DIR}"
         
-        # Create a timestamped debug copy with function name
-        local debug_file="${TMX_DEBUG_DIR}/${session}_${pane_input}_${func_name}_$(date +%s).sh"
-        cp "${tmp_script}" "${debug_file}"
-        chmod +x "${debug_file}"
+        # Get the target pane ID
+        local debug_pane_id="${pane_input}" # Default to original input
         
-        # Get the target pane ID again just in case it wasn't set correctly above (shouldn't happen)
-        # This uses pane_input which might be index or ID
-        local debug_pane_target="${pane_input}" # Default to original input
+        # If input was an index, convert it to ID format
         if [[ ! "${pane_input}" =~ ^%[0-9]+$ && "${pane_input}" =~ ^[0-9]+$ ]]; then
-            # If input was index, use the resolved ID
-            debug_pane_target="${target_pane_id}"
+            # Convert index to ID using the target_pane_id that should be already resolved
+            debug_pane_id="${target_pane_id}"
         fi
-
-        # Sanitize pane ID for filename (% becomes _)
-        local safe_pane_id="${debug_pane_target//%/}"
-        local debug_file="${TMX_DEBUG_DIR}/${session}_pane${safe_pane_id}_${func_name}_$(date +%s).sh"
+        
+        # Create a timestamped debug copy with proper ID format
+        local debug_file="${TMX_DEBUG_DIR}/${session}_${debug_pane_id}_${func_name}_$(date +%s).sh"
         cp "${tmp_script}" "${debug_file}"
         chmod +x "${debug_file}"
 
@@ -1054,10 +1072,19 @@ ${func_def}")
     # --- END DEBUG_SUBSCRIPT INTERCEPTION ---
     
     # Normal execution continues from here
+
+    if ! _tmx_wait_for_file "${tmp_script}" "-f" "before executable permission"; then
+        return 1 # Error message handled by helper
+    fi
     
     # Make script executable
     chmod +x "${tmp_script}"
-    
+
+    # Wait for the executable permission to be set
+    if ! _tmx_wait_for_file "${tmp_script}" "-x" "executable permission"; then
+        return 1 # Error message handled by helper
+    fi
+
     # Execute temporary script using explicit bash invocation
     local send_cmd="bash $(printf '%q' "${tmp_script}")"
     # Use bash explicitly to ensure consistent environment
@@ -1195,24 +1222,27 @@ tmx_create_session_with_handling() {
 #   $2: Variable names array (passed by name reference)
 #   $3: Initial value for variables (optional, default: 0)
 #   $4: Launch terminal flag (optional, default: true)
-# Returns:
-#   - 0 on success
-#   - 1 if creation failed
-# Sets global SESSION_NAME on success
+# Returns: 0 on success, 1 on failure
+# Sets TMX_SESSION_NAME with the created session name
 tmx_create_session_with_vars() {
     local session_name="${1}"
     local -n array_ref="${2}"  # Renamed from var_array_ref to avoid circular reference
     local initial_value="${3:-0}"
     local launch_terminal="${4:-true}"
     
+    # Check if session already exists
+    if tmux has-session -t "${session_name}" 2>/dev/null; then
+        msg_error "Session '${session_name}' already exists"
+        return 1
+    fi
+    
     # Create the session first
-    if ! tmx_create_session_with_handling "${session_name}" "${launch_terminal}"; then
+    if ! tmx_create_session "${session_name}" "${launch_terminal}"; then
         msg_error "Failed to create session with name '${session_name}'"
         return 1
     fi
     
-    # Get the actual session name from global variable
-    session_name="${SESSION_NAME}"
+    # Session name will be the same as input since we don't handle duplicates
     msg_debug "Session created successfully with name: ${session_name}"
     
     # Initialize variables for this session
@@ -1222,10 +1252,40 @@ tmx_create_session_with_vars() {
     fi
     
     msg_debug "Variables initialized for session '${session_name}'"
+    
     return 0
 }
 
 # ======== TMUX ENVIRONMENT VARIABLE HELPERS ========
+
+# Internal helper: Wait for a file condition with timeout
+# Arguments:
+#   $1: File path
+#   $2: Check condition (e.g., "-f" for exists, "-x" for executable)
+#   $3: Description for error message (e.g., "creation", "executable permission")
+# Returns: 0 on success, 1 on timeout
+_tmx_wait_for_file() {
+    local file_path="${1}"
+    local condition="${2}"
+    local description="${3:-file condition}"
+    local timeout=10  # Maximum seconds to wait
+    local interval=0.1  # Check interval in seconds
+    local elapsed=0
+    
+    msg_debug "Waiting for file '${file_path}' condition '${condition}'..."
+    
+    while (( $(echo "$elapsed < $timeout" | bc -l) )); do
+        if test "${condition}" "${file_path}" 2>/dev/null; then
+            msg_debug "File '${file_path}' condition '${condition}' met after ${elapsed}/${timeout} seconds."
+            return 0
+        fi
+        sleep ${interval}
+        elapsed=$(echo "$elapsed + $interval" | bc -l)
+    done
+    
+    msg_error "Timeout waiting for ${description} (${condition}): '${file_path}'"
+    return 1
+}
 
 # Set a tmux environment variable (global or session-specific) -> MOVED to tmux_base_utils.sh
 # tmx_var_set() { ... }
@@ -1286,13 +1346,13 @@ tmx_control_pane() {
         control_pane_id=$(tmx_get_pane_id "${session}" "${target_pane}")
         if [[ -z "${control_pane_id}" ]]; then
             msg_warning "Could not find pane with index ${target_pane}, creating new pane"
-            # Create a new horizontal pane as fallback
+            # Create a new horizontal pane as fallback with control title
             control_pane_id=$(tmx_create_pane "${session}" "h")
         else
             msg_debug "Using pane with index ${target_pane}, ID: ${control_pane_id}"
         fi
     else
-        # Invalid target, create a new pane
+        # Invalid target, create a new pane with title
         msg_warning "Invalid target pane '${target_pane}', creating new pane"
         control_pane_id=$(tmx_create_pane "${session}" "h")
     fi
@@ -1302,7 +1362,16 @@ tmx_control_pane() {
         return 1
     fi
     
+    # Set the title for the control pane using our dedicated function
+    local control_title="L:Control | F:control_function | btn:0"
+    tmx_set_pane_title "${session}" "${control_pane_id}" "${control_title}"
+    
     msg_debug "Control pane ID: ${control_pane_id}"
+    
+    # Set control pane ID in environment for access by other functions
+    tmx_var_set "pane_id_0" "${control_pane_id}" "${session}"
+    tmx_var_set "pane_label_0" "Control" "${session}"
+    tmx_var_set "pane_func_0" "control_function" "${session}"
     
     # Execute the control function in the pane
     if ! tmx_execute_shell_function "${session}" "${control_pane_id}" "control_function" "" "${vars}" "${panes}" "${session}" "${refresh_rate}"; then
@@ -1338,6 +1407,32 @@ control_function() {
     
     # Check for pane ID variables - typically stored as pane_id_1, pane_id_2, etc.
     local -A PANE_ID_MAP=()
+    
+    # Even if no panes were passed, we can discover them from variables
+    if [[ ${#PANE_ARRAY[@]} -eq 0 ]]; then
+        msg_debug "control_function: No panes passed explicitly, looking for pane IDs in variables"
+        # Look through variables for pane_id_X and use those indices
+        for var in "${VAR_ARRAY[@]}"; do
+            if [[ "$var" == pane_id_* ]]; then
+                local index="${var##pane_id_}"
+                # Add index to PANE_ARRAY if not already there
+                local already_added=0
+                for p in "${PANE_ARRAY[@]}"; do
+                    if [[ "$p" == "$index" ]]; then
+                        already_added=1
+                        break
+                    fi
+                done
+                if [[ $already_added -eq 0 ]]; then
+                    PANE_ARRAY+=("$index")
+                    msg_debug "control_function: Auto-added pane index $index from variable $var"
+                fi
+            fi
+        done
+        msg_debug "control_function: After auto-discovery, PANE_ARRAY size=${#PANE_ARRAY[@]}"
+    fi
+    
+    # Map pane_id_X variables to their IDs
     for var in "${VAR_ARRAY[@]}"; do
         if [[ "$var" == pane_id_* ]]; then
             local index="${var##pane_id_}"
@@ -1363,6 +1458,10 @@ control_function() {
     
     # Enable special terminal handling for input
     stty -echo
+    
+    # Set the control pane title once before entering the loop
+    local control_title="L:Control | F:control_function | btn:0"
+    tmx_set_pane_title "${session}" "$(tmx_var_get "pane_id_0" "$session" 2>/dev/null)" "${control_title}"
     
     # Main control loop
     msg_debug "control_function: Entering main loop"
@@ -1408,49 +1507,41 @@ control_function() {
         done
         
         # Display panes
-        msg_debug "control_function: Checking status of ${#PANE_ARRAY[@]} panes"
+        msg_debug "control_function: Checking pane status by direct ID lookup"
         msg_bold "= Panes ="
         
-        # Get the list of all panes in the current session with their IDs for accurate detection
-        local all_panes=$(tmux list-panes -t "${session}" -F "#{pane_index} #{pane_id}")
+        # Get all actual pane IDs in the session
+        local all_panes=$(tmux list-panes -t "${session}" -F "#{pane_id}")
         msg_debug "control_function: Available panes in session: ${all_panes}"
         
-        # Check current status of each tracked pane
-        for pane_idx in "${PANE_ARRAY[@]}"; do
-            # First look for the pane ID in our mapping
-            local pane_id="${PANE_ID_MAP[$pane_idx]:-}"
-            local pane_exists=0
+        # Check each button number's corresponding pane
+        for button_num in {1..9}; do
+            local pane_id=$(tmx_var_get "pane_id_${button_num}" "$session" 2>/dev/null)
+            local pane_label=$(tmx_var_get "pane_label_${button_num}" "$session" 2>/dev/null)
             
-            if [[ -n "$pane_id" ]]; then
-                # Check if the pane ID exists using tmux has-session (more reliable)
-                if tmux has-session -t "$pane_id" 2>/dev/null; then
-                    pane_exists=1
-                    msg_debug "control_function: Pane $pane_idx ($pane_id) EXISTS via ID check"
-                else
-                    # Double-check by scanning the pane list
-                    if echo "${all_panes}" | grep -q " ${pane_id}$"; then
-                        pane_exists=1
-                        msg_debug "control_function: Pane $pane_idx ($pane_id) EXISTS via pane list grep"
-                    fi
-                fi
-            else
-                # If no ID mapping, fall back to index-based check
-                if echo "${all_panes}" | grep -q "^${pane_idx} %"; then
-                    pane_exists=1
-                    # Extract the ID for future use
-                    pane_id=$(echo "${all_panes}" | grep "^${pane_idx} %" | awk '{print $2}')
-                    PANE_ID_MAP["$pane_idx"]="$pane_id"
-                    msg_debug "control_function: Pane $pane_idx EXISTS with newly retrieved ID $pane_id"
-                fi
+            # Skip if no pane ID found for this button
+            if [[ -z "$pane_id" ]]; then
+                continue
             fi
             
-            # Display status based on findings
+            # Use default label if none was set
+            if [[ -z "$pane_label" ]]; then
+                pane_label="Pane ${button_num}"
+            fi
+            
+            local pane_exists=0
+            if echo "$all_panes" | grep -q "^${pane_id}$"; then
+                pane_exists=1
+                msg_debug "Found pane for button ${button_num}: ${pane_id} (${pane_label})"
+            fi
+            
             if [[ $pane_exists -eq 1 ]]; then
-                msg_success "Pane ${pane_idx}: Running - press ${pane_idx} to close"
+                msg_success "Pane ${button_num}: ${pane_label} (${pane_id}) - press ${button_num} to close"
             else
-                msg_warning "Pane ${pane_idx}: Not running"
+                msg_warning "Pane ${button_num}: ${pane_label} - Not running"
             fi
         done
+        
         msg_debug "control_function: Finished checking pane statuses"
         msg_debug "control_function: Preparing for non-blocking read..."
         
@@ -1463,135 +1554,86 @@ control_function() {
             case "$input" in
                 q)
                     msg_debug "control_function: Quit command received"
-                    msg_warning "Closing all panes and exiting..." # Use warning for quit action
-                    
-                    # First attempt to kill all managed panes using their IDs
-                    for pane_idx in "${PANE_ARRAY[@]}"; do
-                        local pane_id="${PANE_ID_MAP[$pane_idx]:-}"
-                        if [[ -n "$pane_id" ]]; then
-                            msg_debug "control_function: Killing pane $pane_idx using ID $pane_id"
-                            if tmx_kill_pane_by_id "$pane_id"; then
-                                msg_success "Closed pane $input using ID-based kill"
-                                # Update the display immediately to reflect the change
-                                sleep 1
-                                continue
-                            else
-                                msg_warning "ID-based kill failed for pane $input ($pane_id), checking if already closed..."
-                            fi
-                        else
-                            # If no ID found (e.g., pane_id_X var wasn't set), try to get ID from index now
-                            msg_warning "control_function: No mapped ID for pane index $pane_idx, attempting lookup"
-                            local fallback_id=$(tmx_get_pane_id "$session" "$pane_idx")
-                            if [[ -n "$fallback_id" ]]; then
-                                msg_debug "control_function: Found fallback ID ${fallback_id}, killing..."
-                                tmx_kill_pane_by_id "$fallback_id"
-                            else
-                                msg_error "control_function: Cannot find ID for pane index $pane_idx to kill it."
-                            fi
+                    msg_warning "Closing all panes and exiting..."
+                    # Iterate downwards from 9 to 1
+                    for ((button_num=9; button_num>=1; button_num--));
+                    do
+                        local pane_id=$(tmx_var_get "pane_id_${button_num}" "$session" 2> /dev/null)
+                        local pane_label=$(tmx_var_get "pane_label_${button_num}" "$session" 2> /dev/null)
+                        
+                        if [[ -z "$pane_label" ]]; then
+                            pane_label="Pane ${button_num}"
                         fi
-                        # Add a small delay to allow tmux to process the kill
-                        sleep 0.1
+                        
+                        if [[ -n "$pane_id" ]]; then
+                            msg_debug "control_function: Killing pane ${button_num} (${pane_label}) using ID ${pane_id}"
+                            if tmx_kill_pane_by_id "$pane_id"; then
+                                msg_success "Closed pane ${button_num}: ${pane_label} (ID: ${pane_id})"
+                            else
+                                msg_warning "Failed to close pane ${button_num}: ${pane_label} (ID: ${pane_id})"
+                            fi
+                            sleep 0.1
+                        fi
                     done
-                    
-                    # Send a direct kill-session command
                     msg_debug "control_function: Killing session ${session}"
-                    # Force the kill-session command to complete before exiting
-                    (tmux kill-session -t "$session" 2>/dev/null &)
-                    
-                    # Force exit of the control pane script
+                    ( tmux kill-session -t "$session" 2> /dev/null & )
                     msg_info "Exiting control function..."
-                    # Use a trap to ensure we exit properly
                     trap '' INT TERM
                     exit 0
-                    ;;
+                ;;
                 r)
                     msg_debug "control_function: Restart command received"
-                    msg_yellow "Enter pane number to restart: " # Use yellow for prompt
-                    read -n 1 pane_num
-                    # Add a newline after read for better formatting
-                    msg "" 
-                    msg_debug "control_function: Pane number to restart: '$pane_num'"
-                    if [[ "$pane_num" =~ ^[0-9]+$ ]]; then
-                        # Check if pane_num is in the array using a loop instead of pattern matching
-                        local pane_exists=0
-                        for p in "${PANE_ARRAY[@]}"; do
-                            if [[ "$p" == "$pane_num" ]]; then
-                                pane_exists=1
-                                break
-                            fi
-                        done
-
-                        if [[ "$pane_exists" -eq 1 ]]; then
-                            msg_debug "control_function: Found pane ${pane_num} in managed panes"
-                            # Logic to restart a pane would go here
-                            # This depends on how panes were originally launched
-                            msg_warning "Restart functionality requires customization" # Use warning
-                        else
-                            msg_debug "control_function: Pane ${pane_num} not found in managed panes"
-                            msg_error "Pane ${pane_num} is not managed by this control pane." # Error if invalid pane num
-                        fi
-                    else
-                         msg_error "Invalid input: Enter a valid pane number." # Error if not a number
-                    fi
-                    sleep 1 # Pause briefly after input
-                    ;;
-                [0-9])
-                    msg_debug "control_function: Close pane command received for pane: $input"
-                    # Check if input is in the array using a loop
-                    local pane_exists=0
-                    for p in "${PANE_ARRAY[@]}"; do
-                        msg_debug "control_function: Checking if pane '$p' matches target '$input'"
-                        if [[ "$p" == "$input" ]]; then
-                            pane_exists=1
-                            msg_debug "control_function: FOUND pane $input in managed panes"
-                            break
-                        fi
-                    done
-
-                    if [[ "$pane_exists" -eq 1 ]]; then
-                        # Get the pane ID for stable reference
-                        local pane_id="${PANE_ID_MAP[$input]:-}"
-                        msg_debug "control_function: Closing pane $input (ID: $pane_id)..."
-                        msg_info "Closing pane $input..." 
+                    msg_yellow "Enter pane number to restart: "
+                    read -n 1 button_num
+                    msg ""
+                    msg_debug "control_function: Button number to restart: '$button_num'"
+                    if [[ "$button_num" =~ ^[0-9]+$ ]]; then
+                        local pane_id=$(tmx_var_get "pane_id_${button_num}" "$session" 2> /dev/null)
+                        local pane_label=$(tmx_var_get "pane_label_${button_num}" "$session" 2> /dev/null)
                         
-                        # Check if we have an ID to use
+                        if [[ -z "$pane_label" ]]; then
+                            pane_label="Pane ${button_num}"
+                        fi
+                        
                         if [[ -n "$pane_id" ]]; then
-                            # ID-based killing (preferred)
-                            msg_debug "control_function: Killing via pane ID: $pane_id"
-                            if tmx_kill_pane_by_id "$pane_id"; then
-                                msg_success "Closed pane $input using ID-based kill"
-                                # Update the display immediately to reflect the change
-                                sleep 1
-                                continue
-                            else
-                                msg_warning "ID-based kill failed for pane $input ($pane_id), checking if already closed..."
-                            fi
+                            msg_debug "control_function: Found pane ID ${pane_id} (${pane_label}) for button ${button_num}"
+                            msg_warning "Restart functionality requires customization for pane: ${pane_label}"
                         else
-                            msg_debug "control_function: No ID found for pane $input"
+                            msg_error "No pane ID found for button ${button_num}"
                         fi
-                        
-                        # If ID-based kill failed or ID wasn't found, check if pane still exists by index
-                        msg_debug "control_function: Re-checking if pane index $input still exists..."
-                        local current_panes=$(tmux list-panes -t "${session}" -F "#{pane_index}")
-                        if echo "${current_panes}" | grep -q "^${input}$"; then
-                            msg_error "Failed to close pane $input (index exists, but kill failed)."
-                        else
-                            msg_warning "Pane $input seems to be already closed (index not found)."
-                            # Force a screen refresh
-                            sleep 0.5 # Short pause before continuing loop
-                            continue
-                        fi
-
                     else
-                        msg_debug "control_function: Pane $input not found in managed panes"
-                        msg_error "Pane $input is not managed by this control pane."
-                        sleep 1
+                        msg_error "Invalid input: Enter a valid pane number."
                     fi
-                    ;;
+                    sleep 1
+                ;;
+                [0-9])
+                    local button_num="$input"
+                    msg_debug "control_function: Close pane command received for button: $button_num"
+                    local pane_id=$(tmx_var_get "pane_id_${button_num}" "$session" 2> /dev/null)
+                    local pane_label=$(tmx_var_get "pane_label_${button_num}" "$session" 2> /dev/null)
+                    
+                    if [[ -z "$pane_label" ]]; then
+                        pane_label="Pane ${button_num}"
+                    fi
+                    
+                    if [[ -n "$pane_id" ]]; then
+                        msg_debug "control_function: Found pane ID ${pane_id} (${pane_label}) for button ${button_num}"
+                        if tmx_kill_pane_by_id "$pane_id"; then
+                            msg_success "Closed pane ${button_num}: ${pane_label} (ID: ${pane_id})"
+                            
+                            # Force immediate refresh of UI 
+                            clear
+                            continue
+                        else
+                            msg_warning "Failed to close pane ${button_num}: ${pane_label} (ID: ${pane_id})"
+                        fi
+                    else
+                        msg_error "No pane ID found for button ${button_num}"
+                    fi
+                ;;
                 *)
-                    # Ignore any other input
                     msg_debug "Ignoring unexpected input: $input"
-                    ;;
+                ;;
             esac
         fi
 
@@ -1650,12 +1692,15 @@ tmx_pane_function() {
         fi
         msg_debug "Converted index ${pane_option} to pane ID ${pane_id}"
     else
-        # Create a new pane with specified split type
+        # Create a new pane with specified split type and title
         if [[ "${pane_option}" != "h" && "${pane_option}" != "v" ]]; then
             msg_warning "Invalid split type: ${pane_option}. Using horizontal."
             pane_option="h"
         fi
-        pane_id=$(tmx_create_pane "${session}" "${pane_option}")
+        
+        # Create a title for the new pane
+        local pane_title="L:${func_name} | F:${func_name}"
+        pane_id=$(tmx_create_pane "${session}" "${pane_option}" "${pane_title}")
         if [[ -z "${pane_id}" ]]; then
             msg_error "Failed to create new pane in session ${session}"
             return 1
@@ -1791,7 +1836,7 @@ tmx_list_session_panes() {
 # Arguments:
 #   $1: Session name
 #   $2: Array name containing counter variables to monitor
-#   $3: Array name containing pane IDs to control (optional)
+#   $3: Variable prefix for storing IDs (optional)
 #   $4: Refresh rate in seconds (optional, default: 1)
 #   $5: Target pane index/ID (optional, default: 0 - use the first pane)
 # Returns: The pane ID of the control pane
@@ -1810,33 +1855,68 @@ tmx_create_monitoring_control() {
         counter_vars_str+="${var} "
     done
     
-    # Add pane ID vars to monitor if prefix is provided
+    # Get registered pane IDs from session variables (NOT relying on bash variables)
     local pane_id_vars=""
-    if [[ -n "${pane_ids_prefix}" ]]; then
-        # Get the count variable to know how many panes
+    local panes_to_control=""
+    local i=1
+    
+    # Find all pane_id_X variables in session
+    while true; do
+        local id_value=$(tmx_var_get "pane_id_${i}" "${session}" 2>/dev/null)
+        if [[ -z "${id_value}" ]]; then
+            break  # No more pane IDs found
+        fi
+        
+        # Add to variables to monitor
+        pane_id_vars+="pane_id_${i} "
+        
+        # Add to panes to control
+        panes_to_control+="${i} "
+        
+        i=$((i + 1))
+    done
+    
+    # If no panes found but prefix is provided, try legacy method
+    if [[ -z "${panes_to_control}" && -n "${pane_ids_prefix}" ]]; then
+        # Legacy method using bash variables
         local count_var="${pane_ids_prefix}_COUNT"
         local pane_count="${!count_var:-0}"
         
-        # Add each pane_id_X variable
         for ((i=1; i<=pane_count; i++)); do
             pane_id_vars+="pane_id_${i} "
         done
+        
+        # Use indices array from prefix
+        local indices_var="${pane_ids_prefix}_INDICES"
+        panes_to_control="${!indices_var:-}"
     fi
     
     # Combine all variables to monitor
     local all_vars="${counter_vars_str} ${pane_id_vars}"
     all_vars="${all_vars% }"  # Remove trailing space
     
-    # Get panes to control - use indices array from prefix if provided
-    local panes_to_control=""
-    if [[ -n "${pane_ids_prefix}" ]]; then
-        local indices_var="${pane_ids_prefix}_INDICES"
-        panes_to_control="${!indices_var:-}"
-    fi
+    # Trim trailing space from panes_to_control
+    panes_to_control="${panes_to_control% }"
+    
+    msg_debug "Monitoring variables: ${all_vars}"
+    msg_debug "Controlling panes: ${panes_to_control}"
     
     # Call the control pane function with the prepared arguments
     local control_pane_id
     control_pane_id=$(tmx_control_pane "${session}" "${all_vars}" "${panes_to_control}" "${refresh_rate}" "${target_pane}")
+    
+    if [[ -n "${control_pane_id}" ]]; then
+        # Register this as pane_id_0 if not already set
+        if [[ -z "$(tmx_var_get "pane_id_0" "${session}" 2>/dev/null)" ]]; then
+            tmx_var_set "pane_id_0" "${control_pane_id}" "${session}"
+            tmx_var_set "pane_label_0" "Control" "${session}"
+            tmx_var_set "pane_func_0" "control_function" "${session}"
+            
+            # Set a title for the control pane
+            local pane_title="L:Control | F:control_function | btn:0"
+            tmx_set_pane_title "${session}" "${control_pane_id}" "${pane_title}"
+        fi
+    fi
     
     # Return the control pane ID
     echo "${control_pane_id}"
@@ -1918,6 +1998,656 @@ tmx_monitor_session() {
         # Sleep to avoid excessive CPU usage
         sleep "${interval}"
     done
+    
+    return 0
+}
+
+# Register pane IDs and prepare control information
+# Arguments:
+#   $1: Session name
+#   $2: Pane info array in format "id:label id:label" (e.g. "%1:Green %2:Blue")
+#   $3: Variable prefix for storing IDs (e.g. "PANE")
+# Sets in parent scope:
+#   - ${PREFIX}_ID_N variables for each pane
+#   - PANES_TO_CONTROL with indices for control
+# Returns: 0 on success
+tmx_register_panes() {
+    local session="${1}"
+    local pane_info="${2}"
+    local prefix="${3:-PANE}"
+    
+    # Split pane info into array
+    local panes=()
+    read -ra panes <<< "${pane_info}"
+    
+    # List of pane indices for control functions
+    local panes_to_control=""
+    
+    # Process each pane and create variables
+    local i=1
+    for pane_data in "${panes[@]}"; do
+        # Extract pane ID and label
+        local id="${pane_data%%:*}"
+        local label="${pane_data#*:}"
+        
+        # If no label provided, use default
+        if [[ "${id}" == "${label}" ]]; then
+            label="Pane ${i}"
+        fi
+        
+        # Set the ID variable in parent scope
+        local id_var="${prefix}_ID_${i}"
+        declare -g "${id_var}=${id}"
+        
+        # Add pane index to control list
+        panes_to_control+="${i} "
+        
+        i=$((i + 1))
+    done
+    
+    # Set global PANES_TO_CONTROL (trim trailing space)
+    declare -g PANES_TO_CONTROL="${panes_to_control% }"
+    
+    return 0
+}
+
+# Display comprehensive session and pane information
+# Arguments:
+#   $1: Session name
+#   $2: Control pane ID (optional, auto-detected if not provided)
+#   $3: Variable prefix for storing IDs (optional, default: "PANE")
+#   $4: Section width (optional, default: 60)
+#   $5: Debug level (optional, default: 1 - normal debug, 2 - extended debug)
+# Returns: 0 on success
+tmx_display_info() {
+    local session="${1}"
+    local control_id="${2:-}"
+    local prefix="${3:-PANE}"
+    local width="${4:-60}"
+    local debug_level="${5:-1}"
+    
+    # Validate session
+    if [[ -z "${session}" ]]; then
+        msg_error "No session name provided for tmx_display_info"
+        return 1
+    fi
+    
+    # Check if session exists
+    if ! tmux has-session -t "${session}" 2>/dev/null; then
+        msg_error "Session '${session}' does not exist"
+        return 1
+    fi
+    
+    # Auto-detect control pane ID if not provided
+    if [[ -z "${control_id}" ]]; then
+        control_id=$(tmux display-message -p -t "${session}:0.0" '#{pane_id}' 2>/dev/null)
+        [[ -n "${control_id}" ]] && msg_debug "Auto-detected control pane ID: ${control_id}"
+    fi
+    
+    # Get all panes in the session
+    local pane_info=$(tmux list-panes -t "${session}" -F "#{pane_index} #{pane_id}")
+    local pane_count=0
+    
+    if [[ -z "${pane_info}" ]]; then
+        msg_warning "No panes found in session '${session}'"
+    else
+        # Count panes
+        pane_count=$(echo "${pane_info}" | wc -l)
+        msg_debug "Found ${pane_count} panes in session '${session}'"
+        
+        # Arrays for pane data
+        local ids=()
+        local indices=()
+        
+        # Process each pane and store its information
+        local i=1
+        while IFS=' ' read -r idx id; do
+            # Store in arrays
+            ids+=("${id}")
+            indices+=("${idx}")
+            
+            # Set variables in parent scope
+            local id_var="${prefix}_ID_${i}"
+            local idx_var="${prefix}_IDX_${i}"
+            
+            declare -g "${id_var}=${id}"
+            declare -g "${idx_var}=${idx}"
+            
+            # Store ID in tmux variable for persistence - BUT ONLY IF IT DOESN'T EXIST YET
+            # This prevents overwriting existing pane registrations
+            if [[ -z "$(tmx_var_get "pane_id_${i}" "${session}" 2>/dev/null)" ]]; then
+                msg_debug "No existing pane registration for index ${i}, registering ID ${id}"
+                tmx_var_set "pane_id_${i}" "${id}" "${session}"
+            fi
+            
+            i=$((i + 1))
+        done <<< "${pane_info}"
+        
+        # Set summary variables
+        local ids_str="${ids[*]}"
+        local indices_str="${indices[*]}"
+        
+        declare -g "${prefix}_COUNT=${pane_count}"
+        declare -g "${prefix}_IDS=${ids_str}"
+        declare -g "${prefix}_INDICES=${indices_str}"
+        
+        # Set PANES_TO_CONTROL if not already set
+        if [[ -z "${PANES_TO_CONTROL}" ]]; then
+            declare -g PANES_TO_CONTROL="${indices_str}"
+        fi
+        
+        # Extended debug logging
+        if [[ "${debug_level}" -ge 2 ]]; then
+            msg_debug "${prefix}_COUNT = ${pane_count}"
+            msg_debug "${prefix}_IDS = ${ids_str}"
+            msg_debug "${prefix}_INDICES = ${indices_str}"
+            msg_debug "PANES_TO_CONTROL = ${PANES_TO_CONTROL}"
+        fi
+    fi
+    
+    # Build pane data string with labels for display
+    local pane_data=""
+    
+    # First try to use registered label variables
+    local has_registered_labels=0
+    
+    # Check if any ID variables exist
+    local id_var="${prefix}_ID_1"
+    if [[ -v "${id_var}" ]]; then
+        local i=1
+        while true; do
+            id_var="${prefix}_ID_${i}"
+            local label_var="${prefix}_LABEL_${i}"
+            
+            # Break if no more IDs
+            if [[ ! -v "${id_var}" ]]; then
+                break
+            fi
+            
+            local id="${!id_var}"
+            
+            # Get label (from variable or fallback to pane title)
+            if [[ -v "${label_var}" ]]; then
+                # Use registered label
+                local label="${!label_var}"
+                pane_data+="${id}:${label} "
+                has_registered_labels=1
+            else
+                # Try to get title from tmux
+                local pane_title
+                pane_title=$(tmux display-message -p -t "${id}" '#{pane_title}' 2>/dev/null)
+                
+                if [[ -n "${pane_title}" && "${pane_title}" != "bash" && "${pane_title}" != "${SHELL##*/}" ]]; then
+                    pane_data+="${id}:${pane_title} "
+                else
+                    pane_data+="${id}:Pane ${i} "
+                fi
+            fi
+            
+            i=$((i + 1))
+        done
+    elif [[ -n "${pane_info}" ]]; then
+        # No registered variables, use raw pane list
+        local i=1
+        while IFS=' ' read -r idx id; do
+            # Try to get pane title from tmux
+            local pane_title
+            pane_title=$(tmux display-message -p -t "${id}" '#{pane_title}' 2>/dev/null)
+            
+            if [[ -n "${pane_title}" && "${pane_title}" != "bash" && "${pane_title}" != "${SHELL##*/}" ]]; then
+                pane_data+="${id}:${pane_title} "
+            else
+                pane_data+="${id}:Pane ${i} "
+            fi
+            
+            i=$((i + 1))
+        done <<< "${pane_info}"
+    fi
+    
+    # Remove trailing space
+    pane_data="${pane_data% }"
+    
+    # Extended debug logging
+    if [[ "${debug_level}" -ge 2 ]]; then
+        msg_debug "Session '${session}' detailed information:"
+        msg_debug "Control pane ID: ${control_id}"
+        msg_debug "Pane data: ${pane_data}"
+        
+        # Log all the variables we've set
+        for ((j=1; ; j++)); do
+            id_var="${prefix}_ID_${j}"
+            if [[ -v "${id_var}" ]]; then
+                msg_debug "${id_var}=${!id_var}"
+            else
+                break
+            fi
+        done
+    fi
+    
+    # === Display formatted session information ===
+    msg_section "Session Information" "${width}" "="
+    msg "Session: ${session}"
+    msg "Pane count: ${pane_count}"
+    
+    if [[ -n "${control_id}" ]]; then
+        msg "Control pane: ${control_id}"
+    fi
+    
+    # Display each pane with its label
+    if [[ -n "${pane_data}" ]]; then
+        msg_bold "Pane IDs (stable identifiers):"
+        
+        # Parse and display the pane data
+        local panes=()
+        read -ra panes <<< "${pane_data}"
+        
+        # Create a header for the detailed pane information
+        msg_section "PANE DETAILS" "${width}" "-"
+        msg_bold "BTN | PANE ID | INDEX | LABEL | FUNCTION | SCRIPT"
+        msg_section "" "${width}" "-"
+        
+        for pane_entry in "${panes[@]}"; do
+            local id="${pane_entry%%:*}"
+            local label="${pane_entry#*:}"
+            
+            # Skip entries that aren't real pane IDs (temporary script paths, etc.)
+            if [[ ! "${id}" =~ ^%[0-9]+$ ]]; then
+                continue
+            fi
+            
+            if [[ "${id}" == "${label}" ]]; then
+                label="Pane ${id#%}"  # Default label if no colon
+            fi
+            
+            # Try to get the pane index from tmux
+            local pane_index=$(tmux list-panes -t "${session}" -F "#{pane_id} #{pane_index}" | grep "^${id} " | awk '{print $2}')
+            
+            # Try to find which button number corresponds to this pane ID
+            local button_num=""
+            
+            # Find all pane_id variables in the session and check them
+            local all_vars=$(tmux show-environment -t "${session}" | grep "^pane_id_" | grep "=${id}$")
+            if [[ -n "${all_vars}" ]]; then
+                button_num=$(echo "${all_vars}" | sed -n 's/^pane_id_\([0-9]*\)=.*/\1/p' | head -1)
+                msg_debug "Found button ${button_num} for pane ${id}"
+            fi
+            
+            # Try to get the function name and script path
+            local func_name=""
+            local script_info="-"
+            
+            if [[ -n "${button_num}" ]]; then
+                # Get function name
+                func_name=$(tmx_var_get "pane_func_${button_num}" "${session}" 2>/dev/null || echo "")
+                
+                # Get the stored label which would be more accurate
+                local stored_label=$(tmx_var_get "pane_label_${button_num}" "${session}" 2>/dev/null)
+                if [[ -n "${stored_label}" ]]; then
+                    label="${stored_label}"
+                fi
+                
+                # Get script path - check stored scripts first
+                local stored_script=$(tmx_var_get "pane_script_${button_num}" "${session}" 2>/dev/null || echo "")
+                
+                # Debug logs for script detection
+                msg_debug "Pane ${id} (btn=${button_num}): Script detection"
+                msg_debug "  - Stored script path: '${stored_script}'"
+                
+                # Check if script exists in TMX_SESSION_TEMPS array
+                if [[ -v TMX_SESSION_TEMPS && -n "${TMX_SESSION_TEMPS[${session}]:-}" ]]; then
+                    msg_debug "  - Session temp files: ${TMX_SESSION_TEMPS[${session}]}"
+                fi
+                
+                # Set script_info based on available data
+                if [[ -n "${stored_script}" && -f "${stored_script}" ]]; then
+                    script_info="$(basename "${stored_script}")"
+                    msg_debug "  - Using stored script: ${script_info}"
+                else
+                    # Try multiple approaches to find the script
+                    local pane_pid=$(tmux display-message -p -t "${id}" '#{pane_pid}' 2>/dev/null || echo "")
+                    if [[ -n "${pane_pid}" ]]; then
+                        msg_debug "  - Checking process ${pane_pid} for script path"
+                        
+                        # Try direct process command
+                        local script_path=$(ps -p "${pane_pid}" -o args= 2>/dev/null | grep -o '/tmp/tmp\.[[:alnum:]]*' || echo "")
+                        
+                        # If not found, try child processes
+                        if [[ -z "${script_path}" ]]; then
+                            local child_pids=$(pgrep -P "${pane_pid}" 2>/dev/null)
+                            for child in ${child_pids}; do
+                                local child_cmd=$(ps -p "${child}" -o args= 2>/dev/null | grep -o '/tmp/tmp\.[[:alnum:]]*' || echo "")
+                                if [[ -n "${child_cmd}" ]]; then
+                                    script_path="${child_cmd}"
+                                    msg_debug "  - Found script in child process ${child}: ${script_path}"
+                                    break
+                                fi
+                            done
+                        fi
+                        
+                        if [[ -n "${script_path}" ]]; then
+                            script_info="$(basename "${script_path}")"
+                            msg_debug "  - Found script in process: ${script_info}"
+                        fi
+                    fi
+                fi
+            fi
+            
+            # If this is the control pane, ensure it has a proper label and button
+            if [[ "${id}" == "${control_id}" ]]; then
+                # Set control pane label
+                label="Control"
+                
+                # If button is not set, set it to 0
+                if [[ -z "${button_num}" ]]; then
+                    button_num="0"
+                    tmx_var_set "pane_id_0" "${id}" "${session}" 
+                    tmx_var_set "pane_label_0" "Control" "${session}"
+                    tmx_var_set "pane_func_0" "control_function" "${session}"
+                fi
+                
+                # Set control function
+                func_name="${func_name:-control_function}"
+                
+                # Add control tag to script info
+                if [[ "${script_info}" == "-" ]]; then
+                    script_info="${script_info} (control)"
+                else
+                    script_info="${script_info} (control)"
+                fi
+                
+                # Display in cyan for control pane
+                msg_cyan " ${button_num} | ${id} | ${pane_index:-?} | ${label} | ${func_name} | ${script_info}"
+            else
+                # Display normal pane info
+                msg " ${button_num:-?} | ${id} | ${pane_index:-?} | ${label} | ${func_name:-?} | ${script_info}"
+            fi
+        done
+        
+        msg_section "" "${width}" "-"
+    fi
+    
+    msg_section "" "${width}" "="
+    
+    return 0
+}
+
+# Create a new pane and execute a shell function in it with auto-registration
+# Arguments:
+#   $1: Session name
+#   $2: Label for the pane (e.g. "Green", "Blue")
+#   $3: Shell function to execute (must be defined in the current shell)
+#   $4: Pane options:
+#      - Integer: Use existing pane with this index
+#      - %ID: Use existing pane with this ID
+#      - "v": Create new vertical split pane
+#      - "h": Create new horizontal split pane
+#   $5: Space-separated list of variables to export (optional)
+#   $6: Variable prefix for storing IDs (optional, default: "PANE")
+# Sets in parent scope:
+#   - ${PREFIX}_ID_N variables for each pane
+#   - Updates PANES_TO_CONTROL with indices for control
+# Returns: The ID (%ID format) of the pane used
+tmx_create_pane_func() {
+    local session="${1}"
+    local label="${2}"
+    local func_name="${3}"
+    local pane_option="${4:-h}"
+    local vars="${5:-}"
+    local prefix="${6:-PANE}"
+    shift 6 # Shift off the first 6 args
+    local func_args=("$@") # Remaining args are function args
+    
+    msg_debug "Creating pane '${label}' with function '${func_name}' in session '${session}'"
+    
+    # Find the next available index by checking tmux environment variables
+    local next_index=1
+    while true; do
+        # Check if pane_id_X variable already exists in tmux environment
+        local existing_id=$(tmx_var_get "pane_id_${next_index}" "${session}" 2>/dev/null)
+        if [[ -z "${existing_id}" ]]; then
+            # Found an available index
+            break
+        fi
+        next_index=$((next_index + 1))
+    done
+    
+    msg_debug "Using next available index: ${next_index} for pane '${label}'"
+    
+    # First determine if we're creating a new pane or using an existing one
+    local create_new_pane=1
+    if [[ "${pane_option}" =~ ^%[0-9]+$ || "${pane_option}" =~ ^[0-9]+$ ]]; then
+        create_new_pane=0
+    fi
+    
+    # Get the temp script file name (for title)
+    local script_file=""
+    
+    # Create/prepare a title for the pane
+    local pane_title="L:${label} | F:${func_name} | btn:${next_index}"
+    
+    # Create the pane and get its ID
+    local pane_id
+    
+    if [[ ${create_new_pane} -eq 1 ]]; then
+        # Create a new pane 
+        pane_id=$(tmx_create_pane "${session}" "${pane_option}")
+        
+        # We need to execute the function in the new pane
+        if [[ -n "${pane_id}" ]]; then
+            msg_debug "Executing function '${func_name}' in newly created pane ${pane_id}"
+            if ! tmx_execute_shell_function "${session}" "${pane_id}" "${func_name}" "${vars}" "${func_args[@]}"; then
+                msg_error "Failed to execute '${func_name}' in pane ${pane_id}"
+            fi
+        fi
+    else
+        # Using existing pane - just get the ID without executing function
+        if [[ "${pane_option}" =~ ^%[0-9]+$ ]]; then
+            pane_id="${pane_option}"
+        else
+            pane_id=$(tmx_get_pane_id "${session}" "${pane_option}")
+        fi
+        
+        # Execute the function in the existing pane
+        if [[ -n "${pane_id}" ]]; then
+            msg_debug "Executing function '${func_name}' in existing pane ${pane_id}"
+            if ! tmx_execute_shell_function "${session}" "${pane_id}" "${func_name}" "${vars}" "${func_args[@]}"; then
+                msg_error "Failed to execute '${func_name}' in pane ${pane_id}"
+            fi
+        fi
+    fi
+    
+    if [[ -z "${pane_id}" ]]; then
+        msg_error "Failed to create pane '${label}' in session '${session}'"
+        return 1
+    fi
+    
+    # Set the initial title for the pane
+    tmx_set_pane_title "${session}" "${pane_id}" "${pane_title}"
+    
+    # Register the pane ID with label
+    local id_var="${prefix}_ID_${next_index}"
+    local label_var="${prefix}_LABEL_${next_index}"
+    
+    # Set variables in parent scope
+    declare -g "${id_var}=${pane_id}"
+    declare -g "${label_var}=${label}"
+    
+    # Update or initialize PANES_TO_CONTROL
+    if [[ -v PANES_TO_CONTROL ]]; then
+        declare -g PANES_TO_CONTROL="${PANES_TO_CONTROL} ${next_index}"
+    else
+        declare -g PANES_TO_CONTROL="${next_index}"
+    fi
+    
+    # Set pane ID in tmux environment for persistence
+    msg_debug "Registering pane '${label}' with ID ${pane_id} as PANE_ID_${next_index} (index ${next_index})"
+    tmx_var_set "pane_id_${next_index}" "${pane_id}" "${session}"
+    tmx_var_set "pane_label_${next_index}" "${label}" "${session}"
+    
+    # Also store the function name for better debugging
+    tmx_var_set "pane_func_${next_index}" "${func_name}" "${session}"
+    
+    # Get the temp script file that was created for this pane
+    # Check the TMX_SESSION_TEMPS array for the most recent temp file
+    if [[ -n "${TMX_SESSION_TEMPS[${session}]:-}" ]]; then
+        local script_files=(${TMX_SESSION_TEMPS[${session}]})
+        local latest_script="${script_files[-1]}"
+        if [[ -f "${latest_script}" ]]; then
+            tmx_var_set "pane_script_${next_index}" "${latest_script}" "${session}"
+            script_file="$(basename "${latest_script}")"
+            msg_debug "Recorded script ${latest_script} for pane ${next_index}"
+            
+            # Update the pane title to include script info
+            pane_title="L:${label} | F:${func_name} | SF:${script_file} | btn:${next_index}"
+            
+            # Set the updated title with script info
+            tmx_set_pane_title "${session}" "${pane_id}" "${pane_title}"
+        fi
+    fi
+    
+    msg_debug "Registered pane '${label}' with ID ${pane_id} as PANE_ID_${next_index} (index ${next_index})"
+    
+    # Return the pane ID
+    echo "${pane_id}"
+    return 0
+}
+
+# Set title for a tmux pane using both ID and numeric addressing for reliability
+# Arguments:
+#   $1: Session name
+#   $2: Pane identifier (can be ID like %1 or index like 0)
+#   $3: Title text to set
+# Returns: 0 on success, 1 on failure
+tmx_set_pane_title() {
+    local session="${1}"
+    local pane_input="${2}"
+    local title="${3}"
+    local target_pane_id=""
+    
+    # Validate inputs
+    if [[ -z "${session}" ]]; then
+        msg_error "tmx_set_pane_title: Session name cannot be empty"
+        return 1
+    fi
+    
+    if [[ -z "${pane_input}" ]]; then
+        msg_error "tmx_set_pane_title: Pane identifier cannot be empty"
+        return 1
+    fi
+    
+    if [[ -z "${title}" ]]; then
+        msg_debug "tmx_set_pane_title: Empty title provided, using default"
+        title="(untitled)"
+    fi
+    
+    # Determine the target pane ID
+    if [[ "${pane_input}" =~ ^%[0-9]+$ ]]; then
+        # Input is already a pane ID
+        target_pane_id="${pane_input}"
+        msg_debug "Using provided pane ID: ${target_pane_id}"
+    elif [[ "${pane_input}" =~ ^[0-9]+$ ]]; then
+        # Input is a pane index, convert to ID for working with both methods
+        target_pane_id=$(tmx_get_pane_id "${session}" "${pane_input}")
+        if [[ -z "${target_pane_id}" ]]; then
+            msg_error "Failed to find pane ID for index ${pane_input} in session ${session}"
+            return 1
+        fi
+        msg_debug "Converted index ${pane_input} to pane ID: ${target_pane_id}"
+    else
+        msg_error "Invalid pane identifier: '${pane_input}'. Must be an index (e.g., 0) or ID (e.g., %1)."
+        return 1
+    fi
+    
+    # Give a moment for the pane to fully initialize if it's newly created
+    sleep 0.1
+    
+    # Method 1: Set title using full session:window.pane target (most reliable)
+    local full_target=""
+    full_target=$(tmux display-message -p -t "${target_pane_id}" '#{session_name}:#{window_index}.#{pane_index}')
+    
+    if [[ -n "${full_target}" ]]; then
+        msg_debug "Setting pane title with DIRECT command: tmux select-pane -t \"${full_target}\" -T \"${title}\""
+        tmux select-pane -t "${full_target}" -T "${title}"
+    else
+        msg_warning "Could not determine full target path for pane ${target_pane_id}"
+    fi
+    
+    # Method 2: Set title using numeric indices as fallback
+    local pane_index=$(tmux display-message -p -t "${target_pane_id}" '#{pane_index}')
+    
+    if [[ -n "${pane_index}" ]]; then
+        msg_debug "Setting title on pane index ${pane_index}: tmux select-pane -t \"${session}:0.${pane_index}\" -T \"${title}\""
+        tmux select-pane -t "${session}:0.${pane_index}" -T "${title}"
+    else
+        msg_warning "Could not determine pane index for pane ${target_pane_id}"
+    fi
+    
+    # Method 3: Set title directly on pane ID as last resort
+    msg_debug "Setting title directly on pane ID: tmux select-pane -t \"${target_pane_id}\" -T \"${title}\""
+    tmux select-pane -t "${target_pane_id}" -T "${title}"
+    
+    # Force a refresh of the tmux client to ensure title is displayed
+    tmux refresh-client
+    
+    return 0
+}
+
+# Configure tmux to display pane titles in a session
+# Arguments:
+#   $1: Session name (optional, for current session if not provided)
+#   $2: Position (optional, default: top)
+# Returns: 0 on success, 1 on failure
+tmx_enable_pane_titles() {
+    local session="${1:-}"
+    local position="${2:-top}"
+    
+    # Validate position - must be: top, bottom, or off
+    if [[ "${position}" != "top" && "${position}" != "bottom" && "${position}" != "off" ]]; then
+        msg_warning "Invalid pane title position: ${position}. Using 'top'."
+        position="top"
+    fi
+    
+    # If no session provided but we're in a tmux environment, try to get current session
+    if [[ -z "${session}" && -n "${TMUX}" ]]; then
+        session=$(tmux display-message -p '#{session_name}' 2>/dev/null)
+        msg_debug "No session specified, using current session: ${session}"
+    fi
+    
+    # Set session-specific or global options
+    if [[ -n "${session}" ]]; then
+        # Check if session exists
+        if ! tmux has-session -t "${session}" 2>/dev/null; then
+            msg_error "Cannot enable pane titles: Session '${session}' does not exist"
+            return 1
+        fi
+        
+        # Set session-specific options
+        msg_debug "Enabling pane titles in session '${session}' at position '${position}'"
+        
+        # Set the pane border status (top, bottom, or off)
+        tmux set-option -t "${session}" pane-border-status "${position}"
+        
+        # Define the format of the pane border to show title
+        tmux set-option -t "${session}" pane-border-format "#{pane_index}#{?pane_title,: #{pane_title},}"
+        
+        # Also enable pane border lines for a better visual
+        tmux set-option -t "${session}" pane-border-lines single
+    else
+        # Set global options
+        msg_debug "Enabling pane titles globally at position '${position}'"
+        
+        # Set the pane border status (top, bottom, or off)
+        tmux set-option -g pane-border-status "${position}"
+        
+        # Define the format of the pane border to show title
+        tmux set-option -g pane-border-format "#{pane_index}#{?pane_title,: #{pane_title},}"
+        
+        # Also enable pane border lines for a better visual
+        tmux set-option -g pane-border-lines single
+    fi
+    
+    # Force refresh to apply changes immediately
+    tmux refresh-client
     
     return 0
 }
