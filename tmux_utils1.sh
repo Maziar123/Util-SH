@@ -1,21 +1,11 @@
 #!/usr/bin/env bash
 
 # =======================================================================
-# NAMING CONVENTION REFACTORING GUIDE:
-# 
-# This file is being refactored to follow these rules:
-# 1. All functions use tmx_ prefix (indicates tmux functionality)
-# 2. No "tmux" in function names after the prefix (redundant)
-# 3. Global variables use TMX_ prefix (uppercase for globals)
-# 
-# Examples:
-# - create_tmux_session → tmx_create_session
-# - kill_tmux_session → tmx_kill_session
-# - TMUX_TERM_EMULATOR → TMX_TERM_EMULATOR
+# NAMING CONVENTION:
+# - All functions use tmx_ prefix (indicates tmux functionality)
+# - No "tmux" in function names after the prefix (redundant)
+# - Global variables use TMX_ prefix (uppercase for globals)
 # =======================================================================
-
-# tmux_utils.sh - Universal utilities for working with tmux
-# ------------------------------------------------------------
 
 # Source global utilities - use absolute path for shellcheck
 # shellcheck source=./sh-globals.sh
@@ -171,8 +161,6 @@ tmx_launch_terminal() {
 # Arguments:
 #   $1: Session name
 #   $2: Launch terminal flag (optional, default: true)
-#     - Can be "true" or "false" to control terminal launching
-#     - Can also be "--headless" which will be treated as "false"
 # Returns: 0 on success, 1 on failure
 tmx_create_session() {
     # Check if a session name was provided, otherwise generate one
@@ -257,9 +245,8 @@ tmx_create_session() {
 }
 
 # ======== TMUX SCRIPT EXECUTION METHODS ========
-# There are three main ways to run scripts in tmux panes:
-#
-# 1. EMBEDDED MODE: Direct inline scripts with heredoc
+# Three main ways to run scripts in tmux panes:
+# 1. EMBEDDED: Direct inline scripts with heredoc
 #    execute_script "${SESSION_NAME}" 0 "VARS" <<EOF
 #      # Your script here
 #    EOF
@@ -268,9 +255,8 @@ tmx_create_session() {
 #    execute_function "${SESSION_NAME}" 0 script_generator_function "VARS"
 #    execute_file "${SESSION_NAME}" 0 "/path/to/script.sh" "VARS"
 #
-# 3. DIRECT FUNCTION MODE (RECOMMENDED): Real shell functions, not string generators
+# 3. DIRECT FUNCTION MODE (RECOMMENDED): Real shell functions
 #    execute_shell_function "${SESSION_NAME}" 0 actual_shell_function "VARS"
-#    - Most natural to write and maintain
 #    - Full IDE/syntax support
 #    - Easy debugging outside of tmux
 
@@ -418,10 +404,8 @@ tmx_execute_script() {
 }
 
 # Create a new pane in a tmux session
-# Arguments:
-#   $1: Session name
-#   $2: Split type (optional, default: h for horizontal)
-# Returns: The ID of the new pane (in %ID format)
+# Args: $1: Session name, $2: Split type (optional, default: h)
+# Returns: The ID of the new pane (%ID format)
 tmx_create_pane() {
     local session="${1}"
     local split_type="${2:-h}"  # Default to horizontal split
@@ -458,8 +442,7 @@ tmx_list_sessions() {
 }
 
 # Kill a tmux session
-# Arguments:
-#   $1: Session name
+# Args: $1: Session name
 tmx_kill_session() {
     local session="${1}"
     
@@ -478,10 +461,7 @@ tmx_kill_session() {
 }
 
 # Send text to a tmux pane without executing
-# Arguments:
-#   $1: Session name
-#   $2: Pane index or pane ID (%ID format)
-#   $3: Text to send
+# Args: $1: Session name, $2: Pane index/ID, $3: Text to send
 tmx_send_text() {
     local session="${1}"
     local pane_input="${2}" # Original input (index or %ID)
@@ -517,11 +497,7 @@ tmx_send_text() {
 }
 
 # Execute a command in all panes of a window
-# Arguments:
-#   $1: Session name
-#   $2: Window index (optional, default: 0)
-#   $3: Command to execute
-#   $4: Skip pane IDs list - space-separated list of pane IDs to skip (optional)
+# Args: $1: Session name, $2: Window index (opt), $3: Command, $4: Skip pane IDs
 tmx_execute_all_panes() {
     local session="${1}"
     local window="${2:-0}"
@@ -1259,10 +1235,7 @@ tmx_create_session_with_vars() {
 # ======== TMUX ENVIRONMENT VARIABLE HELPERS ========
 
 # Internal helper: Wait for a file condition with timeout
-# Arguments:
-#   $1: File path
-#   $2: Check condition (e.g., "-f" for exists, "-x" for executable)
-#   $3: Description for error message (e.g., "creation", "executable permission")
+# Args: $1: File path, $2: Check condition, $3: Description for error
 # Returns: 0 on success, 1 on timeout
 _tmx_wait_for_file() {
     local file_path="${1}"
@@ -1294,10 +1267,7 @@ _tmx_wait_for_file() {
 # tmx_var_get() { ... }
 
 # Initialize multiple tmux environment variables from an array
-# Arguments:
-#   $1: Name of the bash array containing variable names (passed by name reference)
-#   $2: Default value for initialization (optional, defaults to 0)
-#   $3: Target session name (optional, defaults to global)
+# Args: $1: Array name (passed by name ref), $2: Default value, $3: Target session
 tmx_init_vars_array() {
     local -n var_array_ref="$1" # Use nameref to get the array
     local default_value="${2:-0}"
@@ -1927,13 +1897,9 @@ tmx_create_monitoring_control() {
 # trap 'tmx_cleanup_all' EXIT HUP INT QUIT TERM
 
 # Display session information with pane IDs in a formatted way
-# Arguments:
-#   $1: Session name
-#   $2: Control pane ID
-#   $3: Array of pane IDs with optional labels
-#     Format: "pane_id:label pane_id:label ..."
-#     Example: "%0:Main %1:Server %2:Client"
-#   $4: Section width (optional, default: 60)
+# Args: $1: Session name, $2: Control pane ID
+#       $3: Array of pane IDs with labels "pane_id:label pane_id:label"
+#       $4: Section width (optional, default: 60)
 # Returns: 0 on success
 tmx_display_session_info() {
     local session="${1}"
@@ -1971,10 +1937,7 @@ tmx_display_session_info() {
 }
 
 # Monitor a tmux session until it terminates
-# Arguments:
-#   $1: Session name
-#   $2: Sleep interval in seconds (optional, default: 0.5)
-#   $3: Message to display while monitoring (optional)
+# Args: $1: Session name, $2: Sleep interval (opt), $3: Message (opt)
 # Returns: 0 when session terminates normally, 1 on error
 tmx_monitor_session() {
     local session="${1}"

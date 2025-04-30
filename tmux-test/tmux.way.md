@@ -97,7 +97,7 @@ tmx_kill_pane_by_id() {
 
 1. **`local pane_id="$1"`**: Stores the first argument (the pane ID) in a local variable.
 2. **Input Validation**: Checks if a pane ID was provided.
-3. **`tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} #{pane_id}'`**: Lists all panes across all sessions (`-a`). The format (`-F`) outputs the full target specifier (`session:window.pane`) followed by the pane ID.
+3. **`tmux list-panes -a -F **'#{session_name}:#{window_index}.#{pane_index}** #{pane_id}'`**: Lists all panes across all sessions (`-a`). The format (`-F`) outputs the full target specifier (`session:window.pane`) followed by the pane ID.
 4. **`grep -m1 " ${pane_id}$"`**: Filters the output to find the line that ends with the exact pane ID (space prefix ensures we don't match partial IDs like `%1` when searching for `%12`). `-m1` stops after the first match.
 5. **`cut -d' ' -f1`**: Extracts the first field (the target specifier) using space as the delimiter.
 6. **`if [[ -n "$target_pane" ]]`**: Checks if a target pane was found.
@@ -128,6 +128,6 @@ tmx_kill_pane_by_id() {
 
 ### Important Notes
 
-- Pane **indexes are dynamic** and change as panes are created or destroyed. Using IDs or titles provides a more stable way to reference panes.
+- Pane **indexes are dynamic** and **change** as panes are created or destroyed. Using IDs or titles provides a more stable way to reference panes.
 - Use `-m1` in `grep` to match only the first occurrence if multiple panes might potentially match (though IDs should be unique).
 - Pane titles can be empty or non-unique, which might affect lookup by title. IDs are always unique.
