@@ -5,14 +5,14 @@
       "id": "uJVrw8v",
       "label": "msg \"=== TMUX CONTROL PANE ===\"",
       "path": "__root__/tmux_utils1.sh",
-      "params": "0,1423,13,1423,13",
+      "params": "0,0,13,0,0",
       "subs": []
     },
     {
       "id": "uJVCVdE",
       "label": "msg_bold \"Panes \"",
       "path": "__root__/tmux_utils1.sh",
-      "params": "0,1479,18,1479,13",
+      "params": "0,0,18,0,0",
       "subs": []
     }
   ]

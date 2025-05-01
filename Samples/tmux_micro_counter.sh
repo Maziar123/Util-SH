@@ -59,7 +59,7 @@ monitor() {
 }
 
 # Green counter - increments by 2 every second
-green() {
+Green() {
     local session="$1"
     sleep 1 # Allow environment to settle
     
@@ -77,7 +77,7 @@ green() {
 }
 
 # Blue counter - increments by 3 every 2 seconds
-blue() {
+Blue() {
     local session="$1"
     sleep 1 # Allow environment to settle
     
@@ -117,10 +117,16 @@ main() {
     msg_info "Creating counter panes..."
     # Set global variable for TMX_SESSION_NAME in all panes
     tmx_var_set "TMX_SESSION_NAME" "${TMX_SESSION_NAME}" "${TMX_SESSION_NAME}"
-    # Use session name explicitly
-    tmx_first_pane_function "${TMX_SESSION_NAME}" monitor "${TMX_SESSION_NAME}"
-    local p1_id=$(tmx_create_pane_func "${TMX_SESSION_NAME}" "Green" green "v" "" "PANE" "${TMX_SESSION_NAME}")
-    local p2_id=$(tmx_create_pane_func "${TMX_SESSION_NAME}" "Blue" blue "h" "" "PANE" "${TMX_SESSION_NAME}")
+    
+    # Use the refactored function for the first pane (monitor)
+    # Arguments: func_name, [session], [func_arg], [vars]
+    # Session and func_arg will default to TMX_SESSION_NAME, vars defaults to empty
+    tmx_first_pane_function monitor
+    
+    # Arguments: func_name, [session], [label], [prefix], [func_arg], [vars]
+    # Use tmx_new_pane_func for creating the counter panes.
+    local p1_id=$(tmx_new_pane_func Green) 
+    local p2_id=$(tmx_new_pane_func Blue)
     
     # Enable titles and monitor until terminated
     tmx_enable_pane_titles "${TMX_SESSION_NAME}"

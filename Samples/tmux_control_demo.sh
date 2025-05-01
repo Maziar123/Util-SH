@@ -36,7 +36,7 @@ fi
 
 # === Counter pane functions ===
 # Green counter: Increments by 2 every second
-green() {
+Green() {
     local session="$1"
     while true; do
         local current_green=$(tmx_var_get "counter_green" "$session")
@@ -54,7 +54,7 @@ green() {
 }
 
 # Blue counter: Increments by 3 every 2 seconds
-blue() {
+Blue() {
     local session="$1"
     while true; do
         local current_blue=$(tmx_var_get "counter_blue" "$session")
@@ -72,7 +72,7 @@ blue() {
 }
 
 # Yellow counter: Increments by 5 every 3 seconds
-yellow() {
+Yellow() {
     local session="$1"
     while true; do
         local current_yellow=$(tmx_var_get "counter_yellow" "$session")
@@ -109,11 +109,14 @@ main() {
 
     # Create panes and run counter functions in them with auto-registration
     msg_info "Creating counter panes..."
-    local p1_id=$(tmx_create_pane_func "${TMX_SESSION_NAME}" "Green" green "v" "" "PANE" "${TMX_SESSION_NAME}")
-    local p2_id=$(tmx_create_pane_func "${TMX_SESSION_NAME}" "Blue" blue "h" "" "PANE" "${TMX_SESSION_NAME}")
-    local p3_id=$(tmx_create_pane_func "${TMX_SESSION_NAME}" "Yellow" yellow "h" "" "PANE" "${TMX_SESSION_NAME}")
+    # Arguments: func_name, [session], [label], [prefix], [func_arg], [vars]
+    # Use tmx_new_pane_func for creating the counter panes.
+    local p1_id=$(tmx_new_pane_func Green)
+    local p2_id=$(tmx_new_pane_func Blue)
+    local p3_id=$(tmx_new_pane_func Yellow)
     
     # Use pane 0 (the first pane) as the control pane using the simplified function
+    # Arguments: func_name, [session], [prefix], [refresh_rate], [target_pane]
     local p0_id=$(tmx_create_monitoring_control "${TMX_SESSION_NAME}" COUNTER_VARS "PANE" "1" "0")
     
     # Ensure pane titles are visible - do this after all panes are created

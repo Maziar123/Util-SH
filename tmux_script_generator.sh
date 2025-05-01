@@ -8,6 +8,9 @@ source "sh-globals.sh" || { echo "ERROR: Failed to source sh-globals.sh in tmux_
 # shellcheck source=./tmux_base_utils.sh
 source "tmux_base_utils.sh" || { echo "ERROR: Failed to source tmux_base_utils.sh in tmux_script_generator.sh"; exit 1; }
 
+# Enable xtrace for detailed debugging within the pane if desired
+#set -x
+
 # Helper function to generate common script boilerplate
 # Arguments:
 #   $1: Script content (the actual commands to run after the boilerplate)

@@ -404,32 +404,47 @@ tmx_execute_script() {
 }
 
 # Create a new pane in a tmux session
-# Args: $1: Session name, $2: Split type (optional, default: h)
+# Args:
+#   $1: Session name
+#   $2: Split type (h or v, optional, default: h)
+#   $3: Target pane ID to split (optional, splits current window's active pane if omitted)
 # Returns: The ID of the new pane (%ID format)
 tmx_create_pane() {
     local session="${1}"
     local split_type="${2:-h}"  # Default to horizontal split
-    
+    local target_id="${3:-}"  # Optional target pane ID
+    local pane_id="" # Variable to store the new pane ID
+
     # Validate split type
     if [[ "${split_type}" != "h" && "${split_type}" != "v" ]]; then
         msg_warning "Invalid split type: ${split_type}. Using horizontal."
         split_type="h"
     fi
-    
-    # Create a new pane
-    tmux split-window "-${split_type}" -t "${session}"
-    local result=$?
-    
-    if [[ ${result} -eq 0 ]]; then
-        # Get the ID of the most recently created pane
-        local pane_id
-        pane_id=$(tmux list-panes -t "${session}" -F "#{pane_id}" | tail -1)
-        msg_debug "Created new pane with ID: ${pane_id}"
-        
-        echo "${pane_id}"
+
+    # Build the command with -P to print the new pane ID and -F to format it
+    local cmd="tmux split-window -P -F '#{pane_id}' -${split_type}"
+    if [[ -n "${target_id}" ]]; then
+        # Target a specific pane ID
+        cmd+=" -t \"${target_id}\""
+        msg_debug "Splitting pane ${target_id} (${split_type}) in session ${session}"
+    else
+        # Target the session (splits current window's active pane)
+        cmd+=" -t \"${session}\""
+        msg_debug "Splitting current window (${split_type}) in session ${session}"
     fi
-    
-    return ${result}
+
+    # Execute the command and capture the output (the new pane ID)
+    pane_id=$(eval "${cmd}")
+    local result=$?
+
+    if [[ ${result} -eq 0 && -n "${pane_id}" ]]; then
+        msg_debug "Created new pane with ID: ${pane_id}"
+        echo "${pane_id}"
+        return 0 # Return success
+    else
+        msg_error "Failed to create new pane or get its ID. Command: ${cmd}, Result: ${result}, Output: '${pane_id}'"
+        return 1 # Return failure
+    fi
 }
 
 # List active tmux sessions
@@ -1333,7 +1348,7 @@ tmx_control_pane() {
     fi
     
     # Set the title for the control pane using our dedicated function
-    local control_title="L:Control | F:control_function | btn:0"
+    local control_title="L:Control | F:control_function | btn:0 | ID:${control_pane_id}"
     tmx_set_pane_title "${session}" "${control_pane_id}" "${control_title}"
     
     msg_debug "Control pane ID: ${control_pane_id}"
@@ -1430,8 +1445,9 @@ control_function() {
     stty -echo
     
     # Set the control pane title once before entering the loop
-    local control_title="L:Control | F:control_function | btn:0"
-    tmx_set_pane_title "${session}" "$(tmx_var_get "pane_id_0" "$session" 2>/dev/null)" "${control_title}"
+    local control_pane_id="$(tmx_var_get "pane_id_0" "$session" 2>/dev/null)"
+    local control_title="L:Control | F:control_function | btn:0 | ID:${control_pane_id}"
+    tmx_set_pane_title "${session}" "${control_pane_id}" "${control_title}"
     
     # Main control loop
     msg_debug "control_function: Entering main loop"
@@ -1697,15 +1713,25 @@ tmx_pane_function() {
 }
 
 # Setup the first pane (pane 0) with a shell function
-# RENAMED: Use tmx_pane_function with "0" as the pane option
+# Arguments:
+#   $1: Shell function to execute
+#   $2: Session name (optional, defaults to TMX_SESSION_NAME)
+#   $3: Single argument to pass to the shell function (optional, defaults to TMX_SESSION_NAME)
+#   $4: Space-separated list of variables to export (optional)
+# Returns: 0 on success, 1 on failure (Does not return pane ID, as it targets an existing pane)
 tmx_first_pane_function() {
-    local session="${1}"
-    local func_name="${2}"
-    local vars="${3:-}"
-    shift 3 # Shift off the first 3 args
-    local func_args=("$@") # Remaining args are function args
-    
-    msg_debug "tmx_first_pane_function: Targeting first pane (index 0) in session ${session}"
+    local func_name="${1}"
+    local session="${2:-${TMX_SESSION_NAME}}"
+    local func_arg="${3:-${TMX_SESSION_NAME}}"
+    local vars="${4:-}"
+
+    # Validate session is set
+    if [[ -z "${session}" ]]; then
+        msg_error "tmx_first_pane_function: Session name is required (or TMX_SESSION_NAME must be set)."
+        return 1
+    fi
+
+    msg_debug "tmx_first_pane_function: Targeting first pane (index 0) in session ${session} with function ${func_name}"
 
     # Get the ID of the first pane (index 0)
     local first_pane_id
@@ -1714,11 +1740,18 @@ tmx_first_pane_function() {
         msg_error "Failed to find pane ID for index 0 in session ${session}. Cannot target first pane."
         return 1
     fi
-
     msg_debug "Found first pane ID: ${first_pane_id}"
 
-    # Call the unified function using the retrieved Pane ID
-    tmx_pane_function "${session}" "${func_name}" "${first_pane_id}" "${vars}" "${func_args[@]}"
+    # Call the function to run in the existing pane 0
+    # Arguments for tmx_run_in_pane_func:
+    # 1: func_name, 2: session, 3: target_pane_id, 4: func_arg, 5: vars
+    if ! tmx_run_in_pane_func "${func_name}" "${session}" "${first_pane_id}" "${func_arg}" "${vars}"; then
+        msg_error "tmx_first_pane_function: Failed to run '${func_name}' in pane ${first_pane_id}"
+        return 1
+    fi
+    
+    # Return 0 for success, as we are operating on an existing pane
+    return 0 
 }
 
 # List all panes in a session with their IDs and indices
@@ -2335,140 +2368,136 @@ tmx_display_info() {
 
 # Create a new pane and execute a shell function in it with auto-registration
 # Arguments:
-#   $1: Session name
-#   $2: Label for the pane (e.g. "Green", "Blue")
-#   $3: Shell function to execute (must be defined in the current shell)
-#   $4: Pane options:
+#   $1: Shell function to execute (must be defined in the current shell)
+#   $2: Session name (optional, defaults to TMX_SESSION_NAME env var)
+#   $3: Label for the pane (optional, defaults to func_name)
+#   $4: Pane options (optional, default: "h"):
 #      - Integer: Use existing pane with this index
 #      - %ID: Use existing pane with this ID
 #      - "v": Create new vertical split pane
 #      - "h": Create new horizontal split pane
-#   $5: Space-separated list of variables to export (optional)
-#   $6: Variable prefix for storing IDs (optional, default: "PANE")
+#   $5: Variable prefix for storing IDs (optional, default: "PANE")
+#   $6: Single argument to pass to the shell function (optional, defaults to TMX_SESSION_NAME env var)
+#   $7: Space-separated list of variables to export (optional)
 # Sets in parent scope:
 #   - ${PREFIX}_ID_N variables for each pane
 #   - Updates PANES_TO_CONTROL with indices for control
 # Returns: The ID (%ID format) of the pane used
 tmx_create_pane_func() {
-    local session="${1}"
-    local label="${2}"
-    local func_name="${3}"
-    local pane_option="${4:-h}"
-    local vars="${5:-}"
-    local prefix="${6:-PANE}"
-    shift 6 # Shift off the first 6 args
-    local func_args=("$@") # Remaining args are function args
-    
+    local func_name="${1}"        # Arg 1: Function name
+    local session="${2:-${TMX_SESSION_NAME}}"
+    local label="${3:-${func_name}}" # Arg 3: Label (defaults to func_name)
+    local prefix="${4:-PANE}"     # Arg 4: Prefix
+    local func_arg="${5:-${TMX_SESSION_NAME}}"
+    local vars="${6:-}"           # Arg 6: Vars to export
+
+    # Validate that session is set
+    if [[ -z "${session}" ]]; then
+        msg_error "tmx_create_pane_func: Session name is required (or TMX_SESSION_NAME must be set)."
+        return 1
+    fi
+
     msg_debug "Creating pane '${label}' with function '${func_name}' in session '${session}'"
-    
-    # Find the next available index by checking tmux environment variables
+    msg_debug "  Prefix: ${prefix}, Func Arg: '${func_arg}', Vars: '${vars:-none}'"
+
+    # Find the next available index
     local next_index=1
     while true; do
-        # Check if pane_id_X variable already exists in tmux environment
         local existing_id=$(tmx_var_get "pane_id_${next_index}" "${session}" 2>/dev/null)
         if [[ -z "${existing_id}" ]]; then
-            # Found an available index
             break
         fi
         next_index=$((next_index + 1))
     done
-    
     msg_debug "Using next available index: ${next_index} for pane '${label}'"
+
+    # Determine smart layout parameters (split type and target pane)
+    local split_type="h" # Default split type
+    local target_pane_id="" # Default target (split window active)
+
+    case "${next_index}" in
+        1) target_pane_id=$(tmx_var_get "pane_id_0" "${session}"); split_type="h" ;; 
+        2) target_pane_id=$(tmx_var_get "pane_id_0" "${session}"); split_type="v" ;; 
+        3) target_pane_id=$(tmx_var_get "pane_id_1" "${session}"); split_type="v" ;; 
+        4) target_pane_id=$(tmx_var_get "pane_id_2" "${session}"); split_type="h" ;; 
+        5) target_pane_id=$(tmx_var_get "pane_id_2" "${session}"); split_type="v" ;; 
+        6) target_pane_id=$(tmx_var_get "pane_id_3" "${session}"); split_type="h" ;; 
+        7) target_pane_id=$(tmx_var_get "pane_id_3" "${session}"); split_type="v" ;; 
+        8) target_pane_id=$(tmx_var_get "pane_id_4" "${session}"); split_type="h" ;; 
+        *) # Default for index > 8: split previous pane horizontally
+           local prev_index=$((next_index - 1))
+           target_pane_id=$(tmx_var_get "pane_id_${prev_index}" "${session}")
+           split_type="h"
+           ;;
+    esac
     
-    # First determine if we're creating a new pane or using an existing one
-    local create_new_pane=1
-    if [[ "${pane_option}" =~ ^%[0-9]+$ || "${pane_option}" =~ ^[0-9]+$ ]]; then
-        create_new_pane=0
+    # Validate target_pane_id - if not found, fallback to splitting window active pane
+    if [[ -z "${target_pane_id}" ]] || ! tmux list-panes -t "${session}" -F "#{pane_id}" | grep -q "^${target_pane_id}$"; then
+        msg_debug "Smart layout target pane ID not found or invalid ('${target_pane_id}'). Splitting window active pane instead."
+        target_pane_id="" # Reset target_id to use default window split
     fi
     
-    # Get the temp script file name (for title)
-    local script_file=""
-    
-    # Create/prepare a title for the pane
-    local pane_title="L:${label} | F:${func_name} | btn:${next_index}"
-    
-    # Create the pane and get its ID
+    msg_debug "Smart layout determined: Split type='${split_type}', Target Pane='${target_pane_id:-window active}'"
+
+    # --- Create Pane and Execute --- 
     local pane_id
-    
-    if [[ ${create_new_pane} -eq 1 ]]; then
-        # Create a new pane 
-        pane_id=$(tmx_create_pane "${session}" "${pane_option}")
-        
-        # We need to execute the function in the new pane
-        if [[ -n "${pane_id}" ]]; then
-            msg_debug "Executing function '${func_name}' in newly created pane ${pane_id}"
-            if ! tmx_execute_shell_function "${session}" "${pane_id}" "${func_name}" "${vars}" "${func_args[@]}"; then
-                msg_error "Failed to execute '${func_name}' in pane ${pane_id}"
-            fi
+
+    # Create a new pane using the smart layout
+    pane_id=$(tmx_create_pane "${session}" "${split_type}" "${target_pane_id}")
+
+    # We need to execute the function in the new pane
+    if [[ -n "${pane_id}" ]]; then
+        msg_debug "Executing function '${func_name}' in newly created pane ${pane_id}"
+        # Pass the single func_arg explicitly
+        if ! tmx_execute_shell_function "${session}" "${pane_id}" "${func_name}" "${vars}" "${func_arg}"; then 
+            msg_error "Failed to execute '${func_name}' in pane ${pane_id}"
+            # Consider killing pane on failure
         fi
     else
-        # Using existing pane - just get the ID without executing function
-        if [[ "${pane_option}" =~ ^%[0-9]+$ ]]; then
-            pane_id="${pane_option}"
-        else
-            pane_id=$(tmx_get_pane_id "${session}" "${pane_option}")
-        fi
-        
-        # Execute the function in the existing pane
-        if [[ -n "${pane_id}" ]]; then
-            msg_debug "Executing function '${func_name}' in existing pane ${pane_id}"
-            if ! tmx_execute_shell_function "${session}" "${pane_id}" "${func_name}" "${vars}" "${func_args[@]}"; then
-                msg_error "Failed to execute '${func_name}' in pane ${pane_id}"
-            fi
-        fi
+         # If pane creation failed
+         msg_error "Failed to create new pane for function '${func_name}' using smart layout."
+         return 1
     fi
     
-    if [[ -z "${pane_id}" ]]; then
-        msg_error "Failed to create pane '${label}' in session '${session}'"
-        return 1
-    fi
-    
-    # Set the initial title for the pane
+    # --- Registration and Title Setting --- 
+
+    # Prepare title
+    local pane_title="L:${label} | F:${func_name} | btn:${next_index} | ID:${pane_id}"
     tmx_set_pane_title "${session}" "${pane_id}" "${pane_title}"
-    
+
     # Register the pane ID with label
     local id_var="${prefix}_ID_${next_index}"
     local label_var="${prefix}_LABEL_${next_index}"
-    
-    # Set variables in parent scope
     declare -g "${id_var}=${pane_id}"
     declare -g "${label_var}=${label}"
-    
-    # Update or initialize PANES_TO_CONTROL
+
+    # Update PANES_TO_CONTROL
     if [[ -v PANES_TO_CONTROL ]]; then
         declare -g PANES_TO_CONTROL="${PANES_TO_CONTROL} ${next_index}"
     else
         declare -g PANES_TO_CONTROL="${next_index}"
     fi
-    
+
     # Set pane ID in tmux environment for persistence
     msg_debug "Registering pane '${label}' with ID ${pane_id} as PANE_ID_${next_index} (index ${next_index})"
     tmx_var_set "pane_id_${next_index}" "${pane_id}" "${session}"
     tmx_var_set "pane_label_${next_index}" "${label}" "${session}"
-    
-    # Also store the function name for better debugging
     tmx_var_set "pane_func_${next_index}" "${func_name}" "${session}"
-    
-    # Get the temp script file that was created for this pane
-    # Check the TMX_SESSION_TEMPS array for the most recent temp file
+
+    # Record script file and update title if possible
     if [[ -n "${TMX_SESSION_TEMPS[${session}]:-}" ]]; then
         local script_files=(${TMX_SESSION_TEMPS[${session}]})
         local latest_script="${script_files[-1]}"
         if [[ -f "${latest_script}" ]]; then
             tmx_var_set "pane_script_${next_index}" "${latest_script}" "${session}"
-            script_file="$(basename "${latest_script}")"
-            msg_debug "Recorded script ${latest_script} for pane ${next_index}"
-            
-            # Update the pane title to include script info
-            pane_title="L:${label} | F:${func_name} | SF:${script_file} | btn:${next_index}"
-            
-            # Set the updated title with script info
+            local script_file="$(basename "${latest_script}")"
+            pane_title="L:${label} | F:${func_name} | SF:${script_file} | btn:${next_index} | ID:${pane_id}"
             tmx_set_pane_title "${session}" "${pane_id}" "${pane_title}"
         fi
     fi
-    
-    msg_debug "Registered pane '${label}' with ID ${pane_id} as PANE_ID_${next_index} (index ${next_index})"
-    
+
+    msg_debug "Finished registering pane '${label}' (ID: ${pane_id}, Index: ${next_index})"
+
     # Return the pane ID
     echo "${pane_id}"
     return 0
@@ -2590,7 +2619,7 @@ tmx_enable_pane_titles() {
         tmux set-option -t "${session}" pane-border-status "${position}"
         
         # Define the format of the pane border to show title
-        tmux set-option -t "${session}" pane-border-format "#{pane_index}#{?pane_title,: #{pane_title},}"
+        tmux set-option -t "${session}" pane-border-format "Idx:#{pane_index} | ID:#{pane_id}#{?pane_title,: | #{pane_title},}"
         
         # Also enable pane border lines for a better visual
         tmux set-option -t "${session}" pane-border-lines single
@@ -2602,7 +2631,7 @@ tmx_enable_pane_titles() {
         tmux set-option -g pane-border-status "${position}"
         
         # Define the format of the pane border to show title
-        tmux set-option -g pane-border-format "#{pane_index}#{?pane_title,: #{pane_title},}"
+        tmux set-option -g pane-border-format "Idx:#{pane_index} | ID:#{pane_id}#{?pane_title,: | #{pane_title},}"
         
         # Also enable pane border lines for a better visual
         tmux set-option -g pane-border-lines single
@@ -2611,5 +2640,205 @@ tmx_enable_pane_titles() {
     # Force refresh to apply changes immediately
     tmux refresh-client
     
+    return 0
+}
+
+tmx_new_pane_func() {
+    local func_name="${1}"
+    local session="${2:-${TMX_SESSION_NAME}}"
+    local vars="${3:-}"
+    local func_arg="${4:-${TMX_SESSION_NAME}}"
+
+    # Validate session is set
+    if [[ -z "${session}" ]]; then
+        msg_error "tmx_new_pane_func: Session name is required (or TMX_SESSION_NAME must be set)."
+        return 1
+    fi
+
+    msg_debug "tmx_new_pane_func: Targeting new pane in session ${session} with function ${func_name}"
+
+    # Call the unified pane creation function, explicitly targeting the first pane's ID
+    # Arguments for tmx_create_pane_func:
+    # 1: func_name, 2: session, 3: label (use default), 4: pane_option (use ID),
+    # 5: vars, 6: prefix (use default), 7: func_arg
+    tmx_create_pane_func "${func_name}" "${session}" "" "" "${vars}" "" "${func_arg}"
+    
+    # The return value of tmx_create_pane_func is the pane ID, which is what we want.
+}
+
+# Create a new pane with smart layout and execute a shell function in it
+# Arguments:
+#   $1: Shell function to execute (must be defined in the current shell)
+#   $2: Session name (optional, defaults to TMX_SESSION_NAME env var)
+#   $3: Label for the pane (optional, defaults to func_name)
+#   $4: Variable prefix for storing IDs (optional, default: "PANE")
+#   $5: Single argument to pass to the shell function (optional, defaults to TMX_SESSION_NAME env var)
+#   $6: Space-separated list of variables to export (optional)
+# Sets in parent scope:
+#   - ${PREFIX}_ID_N variables for each pane
+#   - Updates PANES_TO_CONTROL with indices for control
+# Returns: The ID (%ID format) of the created pane
+tmx_new_pane_func() {
+    local func_name="${1}"        # Arg 1: Function name
+    local session="${2:-${TMX_SESSION_NAME}}"
+    local label="${3:-${func_name}}" # Arg 3: Label (defaults to func_name)
+    local prefix="${4:-PANE}"     # Arg 4: Prefix
+    local func_arg="${5:-${TMX_SESSION_NAME}}"
+    local vars="${6:-}"           # Arg 6: Vars to export
+
+    # Validate that session is set
+    if [[ -z "${session}" ]]; then
+        msg_error "tmx_new_pane_func: Session name is required (or TMX_SESSION_NAME must be set)."
+        return 1
+    fi
+
+    msg_debug "Creating new pane '${label}' with function '${func_name}' in session '${session}'"
+    msg_debug "  Prefix: ${prefix}, Func Arg: '${func_arg}', Vars: '${vars:-none}'"
+
+    # Find the next available index
+    local next_index=1
+    while true; do
+        local existing_id=$(tmx_var_get "pane_id_${next_index}" "${session}" 2>/dev/null)
+        if [[ -z "${existing_id}" ]]; then
+            break
+        fi
+        next_index=$((next_index + 1))
+    done
+    msg_debug "Using next available index: ${next_index} for pane '${label}'"
+
+    # Determine smart layout parameters (split type and target pane)
+    local split_type="h" # Default split type
+    local target_pane_id="" # Default target (split window active)
+
+    case "${next_index}" in
+        1) target_pane_id=$(tmx_var_get "pane_id_0" "${session}"); split_type="h" ;; 
+        2) target_pane_id=$(tmx_var_get "pane_id_0" "${session}"); split_type="v" ;; 
+        3) target_pane_id=$(tmx_var_get "pane_id_1" "${session}"); split_type="v" ;; 
+        4) target_pane_id=$(tmx_var_get "pane_id_2" "${session}"); split_type="h" ;; 
+        5) target_pane_id=$(tmx_var_get "pane_id_2" "${session}"); split_type="v" ;; 
+        6) target_pane_id=$(tmx_var_get "pane_id_3" "${session}"); split_type="h" ;; 
+        7) target_pane_id=$(tmx_var_get "pane_id_3" "${session}"); split_type="v" ;; 
+        8) target_pane_id=$(tmx_var_get "pane_id_4" "${session}"); split_type="h" ;; 
+        *) # Default for index > 8: split previous pane horizontally
+           local prev_index=$((next_index - 1))
+           target_pane_id=$(tmx_var_get "pane_id_${prev_index}" "${session}")
+           split_type="h"
+           ;;
+    esac
+    
+    # Validate target_pane_id - if not found, fallback to splitting window active pane
+    if [[ -z "${target_pane_id}" ]] || ! tmux list-panes -t "${session}" -F "#{pane_id}" | grep -q "^${target_pane_id}$"; then
+        msg_debug "Smart layout target pane ID not found or invalid ('${target_pane_id}'). Splitting window active pane instead."
+        target_pane_id="" # Reset target_id to use default window split
+    fi
+    
+    msg_debug "Smart layout determined: Split type='${split_type}', Target Pane='${target_pane_id:-window active}'"
+
+    # --- Create Pane and Execute --- 
+    local pane_id
+
+    # Create a new pane using the smart layout
+    pane_id=$(tmx_create_pane "${session}" "${split_type}" "${target_pane_id}")
+
+    # We need to execute the function in the new pane
+    if [[ -n "${pane_id}" ]]; then
+        msg_debug "Executing function '${func_name}' in newly created pane ${pane_id}"
+        # Pass the single func_arg explicitly
+        if ! tmx_execute_shell_function "${session}" "${pane_id}" "${func_name}" "${vars}" "${func_arg}"; then 
+            msg_error "Failed to execute '${func_name}' in pane ${pane_id}"
+            # Consider killing pane on failure
+        fi
+    else
+         # If pane creation failed
+         msg_error "Failed to create new pane for function '${func_name}' using smart layout."
+         return 1
+    fi
+    
+    # --- Registration and Title Setting --- 
+
+    # Prepare title
+    local pane_title="L:${label} | F:${func_name} | btn:${next_index} | ID:${pane_id}"
+    tmx_set_pane_title "${session}" "${pane_id}" "${pane_title}"
+
+    # Register the pane ID with label
+    local id_var="${prefix}_ID_${next_index}"
+    local label_var="${prefix}_LABEL_${next_index}"
+    declare -g "${id_var}=${pane_id}"
+    declare -g "${label_var}=${label}"
+
+    # Update PANES_TO_CONTROL
+    if [[ -v PANES_TO_CONTROL ]]; then
+        declare -g PANES_TO_CONTROL="${PANES_TO_CONTROL} ${next_index}"
+    else
+        declare -g PANES_TO_CONTROL="${next_index}"
+    fi
+
+    # Set pane ID in tmux environment for persistence
+    msg_debug "Registering pane '${label}' with ID ${pane_id} as PANE_ID_${next_index} (index ${next_index})"
+    tmx_var_set "pane_id_${next_index}" "${pane_id}" "${session}"
+    tmx_var_set "pane_label_${next_index}" "${label}" "${session}"
+    tmx_var_set "pane_func_${next_index}" "${func_name}" "${session}"
+
+    # Record script file and update title if possible
+    if [[ -n "${TMX_SESSION_TEMPS[${session}]:-}" ]]; then
+        local script_files=(${TMX_SESSION_TEMPS[${session}]})
+        local latest_script="${script_files[-1]}"
+        if [[ -f "${latest_script}" ]]; then
+            tmx_var_set "pane_script_${next_index}" "${latest_script}" "${session}"
+            local script_file="$(basename "${latest_script}")"
+            pane_title="L:${label} | F:${func_name} | SF:${script_file} | btn:${next_index} | ID:${pane_id}"
+            tmx_set_pane_title "${session}" "${pane_id}" "${pane_title}"
+        fi
+    fi
+
+    msg_debug "Finished registering pane '${label}' (ID: ${pane_id}, Index: ${next_index})"
+
+    # Return the pane ID
+    echo "${pane_id}"
+    return 0
+}
+
+# Execute a shell function in an existing pane
+# Arguments:
+#   $1: Shell function to execute
+#   $2: Session name (optional, defaults to TMX_SESSION_NAME)
+#   $3: Target pane ID (e.g. %0, %1 - required)
+#   $4: Single argument to pass to the shell function (optional, defaults to TMX_SESSION_NAME)
+#   $5: Space-separated list of variables to export (optional)
+# Returns: 0 on success, 1 on failure
+tmx_run_in_pane_func() {
+    local func_name="${1}"
+    local session="${2:-${TMX_SESSION_NAME}}"
+    local target_pane_id="${3}"
+    local func_arg="${4:-${TMX_SESSION_NAME}}"
+    local vars="${5:-}"
+
+    # Validate session
+    if [[ -z "${session}" ]]; then
+        msg_error "tmx_run_in_pane_func: Session name is required (or TMX_SESSION_NAME must be set)."
+        return 1
+    fi
+    
+    # Validate target pane ID
+    if [[ -z "${target_pane_id}" ]]; then
+        msg_error "tmx_run_in_pane_func: Target pane ID is required."
+        return 1
+    fi
+    
+    # Check if target pane ID exists
+    if ! tmux list-panes -t "${session}" -F "#{pane_id}" | grep -q "^${target_pane_id}$"; then
+        msg_error "tmx_run_in_pane_func: Target pane ID '${target_pane_id}' not found in session '${session}'."
+        return 1
+    fi
+
+    msg_debug "Executing function '${func_name}' in existing pane ${target_pane_id} (Session: ${session})"
+    msg_debug "  Func Arg: '${func_arg}', Vars: '${vars:-none}'"
+
+    # Execute the function
+    if ! tmx_execute_shell_function "${session}" "${target_pane_id}" "${func_name}" "${vars}" "${func_arg}"; then 
+        msg_error "Failed to execute '${func_name}' in pane ${target_pane_id}"
+        return 1
+    fi
+
     return 0
 }
