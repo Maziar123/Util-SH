@@ -17,23 +17,21 @@
 # ===================================================================
 
 # === SETUP ===
-SCRIPT_DIR="$(readlink -f "$(dirname "${0}")/../")"
+SCRIPT_DIR="$(readlink -f "$(dirname "${BASH_SOURCE[0]}")/../..")"
 source "${SCRIPT_DIR}/sh-globals.sh"   # For colors and messaging
 source "${SCRIPT_DIR}/tmux_utils1.sh"  # For tmux session management
 sh-globals_init "$@"
 
-# Check if the first argument is --headless
-HEADLESS='' # Default to not headless
-if [[ "$1" = "--headless" ]]; then
-    HEADLESS=$1
-fi
+# Process --headless argument
+HEADLESS=''
+[[ "$1" == "--headless" ]] && HEADLESS="$1" && msg_info "Running in headless mode"
 
 # === SHARED VARIABLES : Define the variables to be initialized
 COUNTER_VARS=("counter_green" "counter_blue" "session_time")
 
 # === PANE FUNCTIONS ===
 # Function for the green counter pane
-green() {
+Green() {
     local session="$1"
     
     while true; do
@@ -43,12 +41,13 @@ green() {
         clear
         msg_bg_green "GREEN COUNTER"
         msg_green "Value: ${v}"
+        msg_green "Press '1' in control pane to close"
         sleep 1
     done
 }
 
 # Function for the blue counter pane
-blue() {
+Blue() {
     local session="$1"
     
     while true; do
@@ -58,6 +57,7 @@ blue() {
         clear
         msg_bg_blue "BLUE COUNTER"
         msg_blue "Value: ${v}"
+        msg_blue "Press '2' in control pane to close"
         sleep 2
     done
 }
@@ -66,28 +66,38 @@ blue() {
 main() {
     # Create a new tmux session with unique timestamp
     local session_name="manage_demo_$(date +%s)"
-    declare session_var=""
     
     # Create the session and initialize variables
-    if ! tmx_create_session_with_vars session_var "${session_name}" "$HEADLESS" "COUNTER_VARS"; then
+    msg_info "Creating tmux session: ${session_name}"
+    if tmx_create_session_with_vars "${session_name}" COUNTER_VARS 0 "${HEADLESS}"; then
+        msg_success "Session created: ${TMX_SESSION_NAME}"
+    else
         msg_error "Failed to create tmux session, exiting."
         return 1
     fi
     
-    msg_info "Session created: ${session_var}"
-    
     # Create worker panes first
     msg_info "Creating counter panes..."
-    p1=$(tmx_pane_function "${session_var}" green "v" "${session_var}")
-    p2=$(tmx_pane_function "${session_var}" blue "h" "${session_var}")
+    # Use tmx_new_pane_func for creating the counter panes
+    local p1_id=$(tmx_new_pane_func Green)
+    local p2_id=$(tmx_new_pane_func Blue)
     
-    # Create the management pane last in pane 0 (will handle time tracking internally)
+    # Create the management pane in pane 0
     msg_info "Creating management pane..."
-    p0=$(tmx_manage_pane "${session_var}" "counter_green counter_blue session_time" "0" "1")
+    local p0_id=$(tmx_create_monitoring_control "${TMX_SESSION_NAME}" COUNTER_VARS "PANE" "1" "0")
     
-    # Keep parent process running
-    echo "Running in: ${session_var} - Press Ctrl+C to exit"
-    while true; do sleep 1; done
+    # Ensure pane titles are visible
+    tmx_enable_pane_titles "${TMX_SESSION_NAME}"
+    
+    # Display comprehensive session information
+    tmx_display_info "${TMX_SESSION_NAME}"
+    
+    # Monitor the session until it terminates
+    tmx_monitor_session "${TMX_SESSION_NAME}" 0.5
+    
+    return 0
 }
 
-main 
+# Run the main function and exit with its status
+main
+exit $? 

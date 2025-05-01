@@ -8,6 +8,7 @@
 #     1. Status bar pane - Shows all counter values in compact format
 #     2. Green counter - Increments by 2 every second 
 #     3. Blue counter - Increments by 3 every 2 seconds
+#     4. Time updater - Tracks session elapsed time
 #
 # USAGE:
 #   ./tmux_status_example.sh [--headless]
@@ -16,23 +17,21 @@
 # ===================================================================
 
 # === SETUP ===
-SCRIPT_DIR="$(readlink -f "$(dirname "${0}")/../")"
+SCRIPT_DIR="$(readlink -f "$(dirname "${BASH_SOURCE[0]}")/../..")"
 source "${SCRIPT_DIR}/sh-globals.sh"   # For colors and messaging
 source "${SCRIPT_DIR}/tmux_utils1.sh"  # For tmux session management
 sh-globals_init "$@"
 
-# Check if the first argument is --headless
-HEADLESS='' # Default to not headless
-if [[ "$1" = "--headless" ]]; then
-    HEADLESS=$1
-fi
+# Process --headless argument
+HEADLESS=''
+[[ "$1" == "--headless" ]] && HEADLESS="$1" && msg_info "Running in headless mode"
 
 # === SHARED VARIABLES : Define the variables to be initialized
 COUNTER_VARS=("counter_green" "counter_blue" "session_time")
 
 # === PANE FUNCTIONS ===
 # Function for the green counter pane
-green() {
+Green() {
     local session="$1"
     while true; do
         local current_green=$(tmx_var_get "counter_green" "$session")
@@ -41,12 +40,13 @@ green() {
         clear
         msg_bg_green "GREEN COUNTER"
         msg_green "Value: ${v}"
+        msg_green "Press '1' in control pane to close"
         sleep 1
     done
 }
 
 # Function for the blue counter pane
-blue() {
+Blue() {
     local session="$1"
     while true; do
         local current_blue=$(tmx_var_get "counter_blue" "$session")
@@ -55,32 +55,28 @@ blue() {
         clear
         msg_bg_blue "BLUE COUNTER"
         msg_blue "Value: ${v}"
+        msg_blue "Press '2' in control pane to close"
         sleep 2
     done
 }
 
 # Function to update session time
-time_updater() {
+TimeUpdater() {
     local session="$1"
     local start_time=$(date +%s)
-    
-    # Debug output to confirm we have the correct session parameter
-    echo "Time updater started for session: ${session}"
     
     while true; do
         local current_time=$(date +%s)
         local elapsed=$((current_time - start_time))
         
-        # Explicitly use session parameter to set variable
-        if ! tmx_var_set "session_time" "${elapsed}s" "${session}"; then
-            echo "Failed to set session_time in session ${session}"
-        fi
+        tmx_var_set "session_time" "${elapsed}s" "${session}"
         
         # Display updated time in the pane for debugging
         clear
-        echo "SESSION TIME UPDATER"
-        echo "Session: ${session}"
-        echo "Elapsed: ${elapsed}s"
+        msg_yellow "SESSION TIME UPDATER"
+        msg_yellow "Session: ${session}"
+        msg_yellow "Elapsed: ${elapsed}s"
+        msg_yellow "Press '3' in control pane to close"
         
         sleep 1
     done
@@ -90,34 +86,44 @@ time_updater() {
 main() {
     # Create a new tmux session with unique timestamp
     local session_name="status_demo_$(date +%s)"
-    declare session_var=""
     
     # Create the session and initialize variables
-    if ! tmx_create_session_with_vars session_var "${session_name}" "$HEADLESS" "COUNTER_VARS"; then
+    msg_info "Creating tmux session: ${session_name}"
+    if tmx_create_session_with_vars "${session_name}" COUNTER_VARS 0 "${HEADLESS}"; then
+        msg_success "Session created: ${TMX_SESSION_NAME}"
+    else
         msg_error "Failed to create tmux session, exiting."
         return 1
     fi
     
-    msg_info "Session created: ${session_var}"
-    
-    # Create the status bar pane in pane 0
-    msg_info "Creating status bar pane..."
-    p0=$(tmx_status_pane "${session_var}" "counter_green counter_blue session_time" "0" "1")
+    # Create the control pane in pane 0
+    msg_info "Creating control pane..."
+    local p0_id=$(tmx_create_monitoring_control "${TMX_SESSION_NAME}" COUNTER_VARS "PANE" "1" "0")
     
     # Create worker panes
     msg_info "Creating counter panes..."
-    p1=$(tmx_pane_function "${session_var}" green "v" "${session_var}")
-    p2=$(tmx_pane_function "${session_var}" blue "h" "${session_var}")
+    # Use tmx_new_pane_func for creating the counter panes
+    local p1_id=$(tmx_new_pane_func Green)
+    local p2_id=$(tmx_new_pane_func Blue)
     
     # Start time updater in a separate pane
-    p3=$(tmx_pane_function "${session_var}" time_updater "h" "${session_var}")
+    local p3_id=$(tmx_new_pane_func TimeUpdater)
     
-    # Make time updater pane small
-    tmux resize-pane -t "${session_var}:0.${p3}" -y 3
+    # Make time updater pane small (still using the original pane resize command)
+    tmux resize-pane -t "${TMX_SESSION_NAME}:0.${p3_id}" -y 5
     
-    # Keep parent process running
-    echo "Running in: ${session_var} - Press Ctrl+C to exit"
-    while true; do sleep 1; done
+    # Ensure pane titles are visible
+    tmx_enable_pane_titles "${TMX_SESSION_NAME}"
+    
+    # Display comprehensive session information
+    tmx_display_info "${TMX_SESSION_NAME}"
+    
+    # Monitor the session until it terminates
+    tmx_monitor_session "${TMX_SESSION_NAME}" 0.5
+    
+    return 0
 }
 
-main 
+# Run the main function and exit with its status
+main
+exit $? 
