@@ -54,6 +54,12 @@ HIDDEN="\e[8m"
 # Reset
 NC="\e[0m"  # No Color (reset)
 
+# Default formatting options
+HEADER_PADDING_WIDTH=60        # Default padding for headers
+SECTION_WIDTH=80              # Default width for section dividers
+BOX_PADDING=1                 # Default padding inside boxes
+MIN_PADDING=3                 # Minimum padding characters
+
 # ======== SCRIPT INFORMATION ========
 # Get the directory of the current script (works for both sourced and executed)
 get_script_dir() {
@@ -1246,19 +1252,37 @@ msg_highlight() {
   echo -e "${CYAN}$*${NC}"
 }
 
-# Display a header message (bold, magenta)
+# Display a header message (bold, magenta with === padding)
+# Usage: msg_header [text] [width]
 msg_header() {
-  #echo -e "${MAGENTA}$*${NC}"
-  #echo "HEADER: $*"
-  echo -e "${RED}$*${NC}" > /dev/tty
+  local text="${1:-}"
+  local width="${2:-$HEADER_PADDING_WIDTH}"  # Default to HEADER_PADDING_WIDTH
+  local color="${MAGENTA}"
+
+  # Ensure minimum width
+  if (( width < ${#text} + ${MIN_PADDING} * 2 )); then
+    width=$(( ${#text} + ${MIN_PADDING} * 2 ))
+  fi
+
+  # Calculate padding
+  local padding=$(( (width - ${#text} - 2) / 2 ))
+  if (( padding < ${MIN_PADDING} )); then
+    padding=${MIN_PADDING}  # Minimum === padding
+  fi
   
+  # Create padding strings
+  local left_pad=$(printf "%${padding}s" | tr ' ' '=')
+  local right_pad=$(printf "%${padding}s" | tr ' ' '=')
+  
+  # Output to /dev/tty with formatting
+  echo -e "${BOLD}${color}${left_pad} ${text} ${right_pad}${NC}" > /dev/tty
 }
 
 # Display a section divider with text
 # Usage: msg_section [text] [width] [char]
 msg_section() {
   local text="${1:-}"
-  local width="${2:-80}"
+  local width="${2:-${SECTION_WIDTH}}"
   local char="${3:-=}"
   
   if [[ -z "$text" ]]; then
@@ -1270,8 +1294,8 @@ msg_section() {
   local text_length=${#text}
   local padding=$(( (width - text_length - 2) / 2 ))
   
-  if [[ $padding -lt 0 ]]; then
-    padding=0
+  if [[ $padding -lt ${MIN_PADDING} ]]; then
+    padding=${MIN_PADDING}
   fi
   
   local left_pad=$(printf "%${padding}s" | tr ' ' "$char")
@@ -1317,7 +1341,7 @@ msg_debug() {
 msg_box() {
   local text="$1"
   local color="${2:-$CYAN}" # Default to Cyan
-  local padding="${3:-1}"
+  local padding="${3:-${BOX_PADDING}}"
 
   # Strip ANSI codes to calculate visible length
   local text_no_color

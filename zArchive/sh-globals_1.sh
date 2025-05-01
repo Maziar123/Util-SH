@@ -905,9 +905,24 @@ msg_highlight() {
 
 # Display a header message (bold, magenta)
 msg_header() {
-  echo -e "${BOLD}${MAGENTA}$*${NC}"
-}
+  local text="${1}"
+  local width="${2:-${#text}+6}"  # Auto-width based on text length + 6 for === padding
+  local color="${MAGENTA}"
 
+  # Calculate dynamic width if not provided
+  if [[ "$width" == *"+6" ]]; then
+    width=$(( ${text//[^0-9]/} + 6 ))  # Remove non-digits and add 6
+  fi
+
+  # Build header string with === padding
+  local padding=$(( (width - ${#text} - 2) / 2 ))
+  [[ $padding -lt 3 ]] && padding=3  # Minimum === padding
+  
+  local left_pad=$(printf "%${padding}s" | tr ' ' '=')
+  local right_pad=$(printf "%${padding}s" | tr ' ' '=')
+  
+  echo -e "${BOLD}${color}${left_pad} ${text} ${right_pad}${NC}" > /dev/tty
+}
 # Display a section divider with text
 # Usage: msg_section [text] [width] [char]
 msg_section() {

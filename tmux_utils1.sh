@@ -1421,10 +1421,10 @@ control_function() {
     fi
     
     # Initial Setup display using msg_*
-    msg "=== TMUX CONTROL PANE ==="
+    msg_header "TMUX CONTROL PANE"
+
     msg "Session: $session | Refresh: ${refresh_rate}s"
     msg "Controls: [q] Quit all | [r] Restart pane | [number] Close pane"
-    msg_section "" 50 "-" # Use msg_section for divider
     
     # Enable special terminal handling for input
     stty -echo
@@ -1448,11 +1448,10 @@ control_function() {
         msg "=== TMUX CONTROL PANE ==="
         msg "Session: $session | Refresh: ${refresh_rate}s | $(date '+%H:%M:%S')"
         msg "Controls: [q] Quit all | [r] Restart pane | [number] Close pane"
-        msg_section "" 50 "-"
         
         # Display variables
         msg_debug "control_function: Processing ${#VAR_ARRAY[@]} variables"
-        msg_bold "= Variables ="
+        msg_header "Variables"
         for var in "${VAR_ARRAY[@]}"; do
             # Skip pane_id_* variables as they're used internally
             if [[ "$var" == pane_id_* ]]; then
@@ -1478,7 +1477,7 @@ control_function() {
         
         # Display panes
         msg_debug "control_function: Checking pane status by direct ID lookup"
-        msg_bold "= Panes ="
+        msg_header "Panes"
         
         # Get all actual pane IDs in the session
         local all_panes=$(tmux list-panes -t "${session}" -F "#{pane_id}")
