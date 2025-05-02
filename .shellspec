@@ -1,0 +1,9 @@
+-f d
+--require spec_helper
+--default-path tests
+--load-path tests:.
+--execdir @project
+--shell bash
+--helperdir tests
+--banner
+--pattern "*_spec.sh"  # Support only the new naming convention
